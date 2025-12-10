@@ -375,18 +375,22 @@ public class TransformerService {
         HashMap<String, String> line = getLineFromOriginalLine(originalLine, finalHeaderToLine, dictionary);
 
         if (columnToRead >= 0) {
-            String headerName = getKeyByValue(columnToRead, finalHeaderToLine);
+            if (columnToRead >= originalLine.length) {
+                log.warn("Skipping value for column index {} because line has only {} columns", columnToRead, originalLine.length);
+            } else {
+                String headerName = getKeyByValue(columnToRead, finalHeaderToLine);
 
-            propertiesValue.add(PropertyValueDto.builder()
-                    .name(headerName)
-                    .val(Utils.getCorrectValue(headerName, originalLine[columnToRead], dictionary))
-                    .build());
+                propertiesValue.add(PropertyValueDto.builder()
+                        .name(headerName)
+                        .val(Utils.getCorrectValue(headerName, originalLine[columnToRead], dictionary))
+                        .build());
 
-            propertiesWithoutSubs.forEach(property -> {
-                if (!property.equalsIgnoreCase(headerName)) {
-                    Utils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
-                }
-            });
+                propertiesWithoutSubs.forEach(property -> {
+                    if (!property.equalsIgnoreCase(headerName)) {
+                        Utils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
+                    }
+                });
+            }
         } else {
             propertiesWithoutSubs.forEach(property -> {
                 Utils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
@@ -434,14 +438,18 @@ public class TransformerService {
 
         finalHeaderToLine.forEach((key, item) -> {
             item.forEach(value -> {
+                if (value >= originalLine.length) {
+                    log.warn("Skipping column '{}' at index {} because line has only {} columns", key, value, originalLine.length);
+                    return;
+                }
                 if (withoutNegativeHeader.contains(key)) {
-                resultMap.put(key, originalLine[value]);
-            } else if (withNegativeHeader.contains(key)) {
-                resultMap.put(key, originalLine[value].charAt(0) != '-' ? originalLine[value] : "null");
-            } else if (negativeHeader.contains(key)) {
-                resultMap.put(key, originalLine[value].charAt(0) == '-' ? originalLine[value] : "null");
-            }
-            });            
+                    resultMap.put(key, originalLine[value]);
+                } else if (withNegativeHeader.contains(key)) {
+                    resultMap.put(key, originalLine[value].charAt(0) != '-' ? originalLine[value] : "null");
+                } else if (negativeHeader.contains(key)) {
+                    resultMap.put(key, originalLine[value].charAt(0) == '-' ? originalLine[value] : "null");
+                }
+            });
         });
 
         return resultMap;

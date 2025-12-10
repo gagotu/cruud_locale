@@ -271,9 +271,14 @@ public class Utils {
             var columnName = header[k];
 
             if (columnName.equalsIgnoreCase(property)) {
+                String raw = line.get(columnName);
+                if (raw == null) {
+                    // Colonna non presente in questa riga: la riempiremo eventualmente con nullsField
+                    return;
+                }
                 propertiesValue.add(PropertyValueDto.builder()
                         .name(columnName)
-                        .val(getCorrectValue(columnName, line.get(columnName), dictionary))
+                        .val(getCorrectValue(columnName, raw, dictionary))
                         .build());
             }
         }
@@ -363,7 +368,8 @@ public class Utils {
 
         String sanitized = datetimeString.trim();
 
-        List<String> patterns = List.of(
+        // First try date+time patterns
+        List<String> dateTimePatterns = List.of(
                 "yyyy-MM-dd HH:mm:ss",
                 "dd/MM/yyyy HH:mm:ss",
                 "yyyyMMddHHmmss",
@@ -373,15 +379,28 @@ public class Utils {
                 "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
         );
 
-        for (String pattern : patterns) {
+        for (String pattern : dateTimePatterns) {
             try {
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
                 LocalDateTime.parse(sanitized, formatter);
-                return pattern; // L'analisi ha avuto successo, restituisci il pattern
-            } catch (DateTimeParseException e) {
-                // L'analisi è fallita, prova il pattern successivo
-            }
+                return pattern; // match with time component
+            } catch (DateTimeParseException ignored) { }
         }
+
+        // Then try date-only patterns
+        List<String> dateOnlyPatterns = List.of(
+                "yyyy-MM-dd",
+                "dd/MM/yyyy",
+                "yyyyMMdd"
+        );
+        for (String pattern : dateOnlyPatterns) {
+            try {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
+                LocalDate.parse(sanitized, formatter);
+                return pattern; // match with date only
+            } catch (DateTimeParseException ignored) { }
+        }
+
         log.debug("pattern non riconosciuto per valore '{}'", sanitized);
         return "dd/MM/yyyy"; // Pattern default
     }
