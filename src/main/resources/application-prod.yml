@@ -1,0 +1,28 @@
+temp-folder: '/data/app/source/temp/'
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  data:
+    mongodb:
+      host: ${SPRING_DATA_MONGODB_HOST}
+      port: ${SPRING_DATA_MONGODB_PORT}
+      database: ${SPRING_DATA_MONGODB_DATABASE}
+      username: ${SPRING_DATA_MONGODB_USERNAME}
+      password: ${SPRING_DATA_MONGODB_PASSWORD}
+      authentication-database: admin
+      auto-index-creation: true
+
+  rabbitmq:
+    host: ${SPRING_DATA_RABBITMQ_HOST}
+    port: ${SPRING_DATA_RABBITMQ_PORT}
+    username: ${SPRING_DATA_RABBITMQ_USER}
+    password: ${SPRING_DATA_RABBITMQ_PASSWORD}
+    auto_convert: ${SPRING_DATA_RABBITMQ_AUTO_CONVERT}
+    auto_clean: ${SPRING_DATA_RABBITMQ_AUTO_CLEAN}
+    queues:
+      convert_csv: convert_csv
+      clean_csv: clean_csv

@@ -1,0 +1,27 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: cruud
+
+  profiles:
+    active: @active-profiles@
+
+# Default UrbanDataset configuration
+ud:
+  # Maximum number of lines to include in a single UrbanDataset. When the
+  # number of values exceeds this threshold the conversion will automatically
+  # generate multiple UD files with suffixed names (e.g., _1, _2). A value of
+  # 0 or a negative value means no limit (all rows in a single UD).
+  maxRowsPerUd: 1000
+  dst:
+    # Policy for selecting which occurrence to keep when an overlap occurs during DST rollback.
+    # KEEP_LATER means keep the later (standard time) instant. KEEP_EARLIER would keep the
+    # earlier (daylight saving) instant. Currently unused when utcUd is fixed.
+    overlapPolicy: KEEP_LATER
+    # Policy to handle gaps during DST switch forward. SHIFT_FORWARD moves timestamps
+    # into the next valid time. SHIFT_FORWARD_COMPRESS compresses the timeline by applying
+    # a one-hour negative correction to all subsequent timestamps once the boundary is reached.
+    # SKIP would skip these periods entirely. Currently unused when udUtc is fixed.
+    gapPolicy: SHIFT_FORWARD_COMPRESS

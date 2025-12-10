@@ -1,0 +1,45 @@
+# cartella temporanea (Windows): ok usare gli apici singoli per evitare di dover escaperare i backslash
+temp-folder: 'C:\Users\gaturturro\Documents\DockerVolumes\cruud\sourceCsv\temp\'
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      database: cruud
+      username: admin
+      password: password
+      authentication-database: admin
+      auto-index-creation: true
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: password
+    auto_convert: 3600000
+    auto_clean: 172800000
+    queues:
+      convert_csv: convert_csv
+      clean_csv: clean_csv
+
+# === LOGGING ATTIVO ===
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    com.exprivia.nest.cruud: DEBUG   # debug solo per il tuo pacchetto
+  file:
+    name: logs/cruud.log             # scrive anche su file (rotazione consigliata con logback-spring.xml)
+
+# === CONFIGURAZIONE UD GLOBALE ===
+ud:
+  maxRowsPerUd: 10               # 0 = nessun limite; >0 abilita chunking e suffissi _1, _2, ...
+  dst:
+    overlapPolicy: KEEP_LATER        
+    gapPolicy: SHIFT_FORWARD_COMPRESS 

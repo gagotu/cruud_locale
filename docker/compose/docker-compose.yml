@@ -1,0 +1,73 @@
+services:
+  mongodb:
+    container_name: mongodb
+    image: mongo:8
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - "${MONGO_DATA_PATH:-${HOST_DOCUMENTS_DIR}/${MONGO_DATA_SUBDIR}}:/data/db"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cruud_network
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:4-management-alpine
+    command: rabbitmq-server
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672" #amqp
+      - "15672:15672" #http
+      - "15692:15692" #prometheus
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "5672" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cruud_network
+
+  app:
+    container_name: cruud
+    image: cruud-img
+    restart: always
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    volumes:
+      - "${APP_DATA_PATH:-${HOST_DOCUMENTS_DIR}/${APP_DATA_SUBDIR}}:/data/app"
+    environment:
+      SPRING_DATA_MONGODB_HOST: ${DB_HOST}
+      SPRING_DATA_MONGODB_DATABASE: ${DB_NAME}
+      SPRING_DATA_MONGODB_USERNAME: ${DB_USERNAME}
+      SPRING_DATA_MONGODB_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATA_MONGODB_PORT: ${DB_PORT}
+      SPRING_DATA_MONGODB_BASICAUTH: ${BASICAUTH}
+      SPRING_DATA_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_DATA_RABBITMQ_PORT: ${RABBITMQ_PORT}
+      SPRING_DATA_RABBITMQ_USER: ${RABBITMQ_USER}
+      SPRING_DATA_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_DATA_RABBITMQ_AUTO_CONVERT: ${RABBITMQ_AUTO_CONVERT}
+      SPRING_DATA_RABBITMQ_AUTO_CLEAN: ${RABBITMQ_AUTO_CLEAN}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - cruud_network
+
+networks:
+  cruud_network:
