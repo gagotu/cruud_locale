@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * Property Definition Dto class for UD-specification
+ * Collezione delle proprietà definite nella specifica UD.
  */
 @Data
 @Builder

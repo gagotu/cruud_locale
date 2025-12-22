@@ -33,7 +33,7 @@ public class UtilsTest {
         result.put("start_ts", "2022-07-01T00:00:00");
         result.put("end_ts", "2022-07-01T00:15:00");
 
-        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, slice));
+        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, string, slice));
     }
 
     @Test
@@ -44,7 +44,7 @@ public class UtilsTest {
         string = "00:00-00:15";
         slice = -1;
 
-        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, slice));
+        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, string, slice));
     }
 
     @Test
@@ -55,7 +55,58 @@ public class UtilsTest {
         string = "ea6";
         slice = 90;
 
-        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, slice));
+        assertEquals(result, Utils.getStartAndEndTimeFromString(date, string, string, slice));
+    }
+
+    @Test
+    void testGetStartAndEndTimeFromStringMergesDateAndTimeColumns() {
+        result.put("start_ts", "2023-10-29T01:00:00.000Z");
+        result.put("end_ts", "2023-10-29T01:00:00.000Z");
+
+        assertEquals(result, Utils.getStartAndEndTimeFromString("2023-10-29", "ignored", "01:00:00.000Z", 0));
+    }
+
+    @Test
+    void testGetStartAndEndTimeFromStringHandlesTrailingTDate() {
+        result.put("start_ts", "2023-10-29T01:20:00.000Z");
+        result.put("end_ts", "2023-10-29T01:20:00.000Z");
+
+        assertEquals(result, Utils.getStartAndEndTimeFromString("2023-10-29T", "ignored", "01:20:00.000Z", 0));
+    }
+
+    @Test
+    void testGetStartAndEndTimeFromStringFallsBackToPeriodWhenDateMissing() {
+        result.put("start_ts", "2023-10-30T05:15:00+02:00");
+        result.put("end_ts", "2023-10-30T05:15:00+02:00");
+
+        assertEquals(result, Utils.getStartAndEndTimeFromString(null, "ignored", "2023-10-30T05:15:00+02:00", 0));
+    }
+
+    @Test
+    void testGetStartAndEndTimeFromStringKeepsFullDateTimestamp() {
+        String fullTs = "2023-10-30T08:00:00";
+        result.put("start_ts", fullTs);
+        result.put("end_ts", fullTs);
+
+        assertEquals(result, Utils.getStartAndEndTimeFromString(fullTs, "ignored", "01:00:00", 0));
+    }
+
+    @Test
+    void testSliceAddsEndBasedOnStartWhenHeaderHasNoDigits() {
+        HashMap<String, Object> expected = new HashMap<>();
+        expected.put("start_ts", "2023-10-29T01:00:00");
+        expected.put("end_ts", "2023-10-29T01:20:00");
+
+        assertEquals(expected, Utils.getStartAndEndTimeFromString("2023-10-29", "orario", "01:00:00", 20));
+    }
+
+    @Test
+    void testSliceAddsEndWhenTimestampHasOffset() {
+        HashMap<String, Object> expected = new HashMap<>();
+        expected.put("start_ts", "2023-10-29T01:00:00.000Z");
+        expected.put("end_ts", "2023-10-29T01:20:00.000Z");
+
+        assertEquals(expected, Utils.getStartAndEndTimeFromString("2023-10-29T", "orario", "01:00:00.000Z", 20));
     }
 
 }

@@ -16,7 +16,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Property Service that expose business methods for Properties
+ * Servizio applicativo per gestire le property di mapping: CRUD, filtro dinamico
+ * e gestione dell'eccezione per nomi duplicati, con mapping DTO↔modello.
  */
 @Slf4j
 @Service
@@ -28,12 +29,7 @@ public class PropertyService {
     @Autowired
     private PropertyMapper propertyMapper;
 
-    /**
-     * Method to create a property
-     * @param dto to create
-     * @return property created
-     * @throws DuplicateNameException exception for duplicate properties name into DB
-     */
+    /** Crea una property, intercettando l'errore di nome duplicato. */
     public PropertyDto create(PropertyDto dto) throws DuplicateNameException {
         log.debug("Property Service: Create -> {}", dto);
 
@@ -47,39 +43,25 @@ public class PropertyService {
 
     }
 
-    /**
-     * Method to retrieve all properties
-     * @return all properties
-     */
+    /** Restituisce tutte le property. */
     public List<PropertyDto> getAll() {
         log.debug("Property Service: getAll");
         return convertListInDto(propertyRepository.findAll());
     }
 
-    /**
-     * Method to retrieve a property by id
-     * @param id to find
-     * @return property found
-     */
+    /** Restituisce una property per id. */
     public Optional<PropertyDto> getById(String id) {
         log.debug("Property Service: getById -> {}", id);
         return propertyRepository.findById(id).map(propertyMapper::modelToDto);
     }
 
-    /**
-     * Method to remove property by id
-     * @param id to remove property
-     */
+    /** Cancella una property per id. */
     public void remove(String id) {
         log.debug("Property Service: remove -> {}", id);
         propertyRepository.deleteById(id);
     }
 
-    /**
-     * Method to retrieve filtered properties
-     * @param dto to retrieve filtered properties
-     * @return filtered properties
-     */
+    /** Restituisce le property filtrate secondo i criteri del filtro. */
     public List<PropertyDto> getFilteredProperties(PropertyFilterDto dto) {
         log.debug("Property Service: getFilteredProperties -> {}", dto);
         return convertListInDto(propertyRepository.getFilteredProperties(dto));

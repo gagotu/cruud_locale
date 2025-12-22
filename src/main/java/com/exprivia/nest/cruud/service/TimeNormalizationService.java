@@ -11,10 +11,19 @@ import java.time.format.DateTimeParseException;
 import java.time.zone.ZoneRules;
 import java.util.*;
 
+/**
+ * Central point for temporal normalization. It receives raw periods produced
+ * during CSV/JSON parsing, decides which scenario applies (timestamps con UTC
+ * esplicito vs solo orario locale con timeZone configurata) e:
+ * - converte direttamente gli istanti con offset verso l'udUtc target
+ * - per input senza offset applica scrubbing DST: rileva overlap, scarta gli
+ *   orari ambigui e mappa prima/seconda occorrenza quando disponibili.
+ */
 @Slf4j
 @Service
 public class TimeNormalizationService {
 
+    /** Formato di output per i timestamp normalizzati. */
     private static final DateTimeFormatter OUTPUT_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final List<DateTimeFormatter> LOCAL_PATTERNS = List.of(
             DateTimeFormatter.ISO_LOCAL_DATE_TIME,
@@ -25,18 +34,22 @@ public class TimeNormalizationService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
     );
 
+    /**
+     * Normalizza i periodi usando le chiavi standard start_ts/end_ts.
+     */
     public List<ResultValueDto> normalizePeriods(List<ResultValueDto> values,
                                                  String timeZone,
                                                  String udUtcOffset,
                                                  boolean handleDst) {
-        return normalizePeriods(values, timeZone, udUtcOffset, handleDst, List.of("start_ts", "end_ts"));
+        return normalizePeriods(values, timeZone, udUtcOffset, handleDst, List.of("start_ts", "end_ts"), false);
     }
 
     public List<ResultValueDto> normalizePeriods(List<ResultValueDto> values,
                                                  String timeZone,
                                                  String udUtcOffset,
                                                  boolean handleDst,
-                                                 List<String> timestampKeys) {
+                                                 List<String> timestampKeys,
+                                                 boolean allowSingleOverlap) {
         if (values == null || values.isEmpty()) {
             return values == null ? List.of() : values;
         }
@@ -60,11 +73,15 @@ public class TimeNormalizationService {
 
         ZoneId sourceZone = Utils.parseZoneId(timeZone);
         log.info("Normalizing timestamps without UTC using timeZone={} (targetOffset={})", sourceZone, targetOffset);
-        List<ResultValueDto> normalized = normalizeWithoutUtc(values, sourceZone, targetOffset, timestampKeys);
+        List<ResultValueDto> normalized = normalizeWithoutUtc(values, sourceZone, targetOffset, timestampKeys, allowSingleOverlap);
         log.info("Normalization completed. kept={} dropped={}", normalized.size(), values.size() - normalized.size());
         return normalized;
     }
 
+    /**
+     * Scenario 1: i timestamp hanno già offset/UTC. Converte verso l'offset target
+     * e scarta record non parsabili.
+     */
     private List<ResultValueDto> normalizeWithExplicitUtc(List<ResultValueDto> values,
                                                           ZoneOffset targetOffset,
                                                           List<String> timestampKeys) {
@@ -97,10 +114,15 @@ public class TimeNormalizationService {
         return normalized;
     }
 
+    /**
+     * Scenario 2: timestamp locali senza offset. Usa timeZone per creare ZonedDateTime,
+     * gestisce overlap DST (prima/seconda occorrenza) e scarta i casi ambigui.
+     */
     private List<ResultValueDto> normalizeWithoutUtc(List<ResultValueDto> values,
                                                      ZoneId sourceZone,
                                                      ZoneOffset targetOffset,
-                                                     List<String> timestampKeys) {
+                                                     List<String> timestampKeys,
+                                                     boolean allowSingleOverlap) {
         ZoneRules rules = sourceZone.getRules();
         Map<ResultValueDto, List<TimestampRef>> refsByRecord = new LinkedHashMap<>();
         Map<OverlapKey, List<TimestampRef>> overlapGroups = new LinkedHashMap<>();
@@ -154,7 +176,12 @@ public class TimeNormalizationService {
             }
             List<TimestampRef> occurrences = entry.getValue();
             if (occurrences.size() == 1) {
-                occurrences.get(0).dropReason = "single occurrence in DST overlap without UTC";
+                if (allowSingleOverlap) {
+                    occurrences.get(0).resolved = first;
+                    log.info("Resolving single occurrence in DST overlap as first offset key={} ts={}", occurrences.get(0).key, occurrences.get(0).raw);
+                } else {
+                    occurrences.get(0).dropReason = "single occurrence in DST overlap without UTC";
+                }
             } else {
                 occurrences.get(0).resolved = first;
                 occurrences.get(1).resolved = second;
@@ -196,6 +223,7 @@ public class TimeNormalizationService {
         return normalized;
     }
 
+    /** Parsing robusto di un timestamp con offset/UTC. */
     private ZonedDateTime parseWithOffset(String raw) {
         try {
             return OffsetDateTime.parse(raw).toZonedDateTime();
@@ -209,6 +237,7 @@ public class TimeNormalizationService {
         return null;
     }
 
+    /** Parsing di un timestamp locale secondo i pattern noti. */
     private LocalDateTime parseLocal(String raw) {
         for (DateTimeFormatter formatter : LOCAL_PATTERNS) {
             try {
@@ -218,6 +247,7 @@ public class TimeNormalizationService {
         return null;
     }
 
+    /** Cast sicuro a stringa. */
     private String asString(Object val) {
         if (val == null) {
             return null;
@@ -225,6 +255,7 @@ public class TimeNormalizationService {
         return val instanceof String s ? s : val.toString();
     }
 
+    /** Log strutturato per i record scartati. */
     private void logDrop(ResultValueDto rv, TimestampRef ref) {
         logDrop(rv, ref.key, ref.raw, ref.dropReason);
     }
@@ -258,5 +289,6 @@ public class TimeNormalizationService {
         }
     }
 
+    /** Chiave per raggruppare timestamp locali uguali durante l'overlap. */
     private record OverlapKey(String key, LocalDateTime local) { }
 }

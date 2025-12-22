@@ -4,15 +4,15 @@ import java.math.BigDecimal;
 import java.util.regex.Pattern;
 
 /**
- * Util class used to Execute basic math operations
+ * Utilità per applicare semplici trasformazioni numeriche ai valori letti dal CSV.
+ * Supporta funzioni configurate nel mapping (es. num, >0, +x, *x, /x, -x).
  */
 public class Maths {
 
     /**
-     * Method that retrieve the result of function for value
-     * @param value used to elaborate result
-     * @param function to apply
-     * @return a function result
+     * Applica una funzione al valore testuale: può validare numeri, forzare positività
+     * o eseguire operazioni aritmetiche di base. In caso di input non numerico,
+     * restituisce l'alternativa prevista.
      */
     public static String execute(String value, String function, String alternativeValue) {
 
@@ -26,11 +26,13 @@ public class Maths {
 
         } else {
 
-            if (!Pattern.matches("-?\\d+(\\.\\d+)?", value))
+            String normalized = Utils.normalizeDecimalSeparator(value);
+
+            if (!Pattern.matches("-?\\d+(\\.\\d+)?", normalized))
                 return value;
 
-            BigDecimal a = new BigDecimal(value);
-            BigDecimal b = new BigDecimal(function.substring(1));
+            BigDecimal a = new BigDecimal(normalized);
+            BigDecimal b = new BigDecimal(Utils.normalizeDecimalSeparator(function.substring(1)));
 
             switch (function.charAt(0)) {
                 case '+':

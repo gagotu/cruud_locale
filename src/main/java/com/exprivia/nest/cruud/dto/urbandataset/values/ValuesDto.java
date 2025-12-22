@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * Values class Dto for UD-Values
+ * Contiene l'elenco delle righe di valori (line) dell'UrbanDataset.
  */
 @Data
 @Builder

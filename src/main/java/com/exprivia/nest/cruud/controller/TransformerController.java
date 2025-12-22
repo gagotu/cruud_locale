@@ -13,7 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Transformer Controller that expose REST API for convert CSV and JSON retrieved
+ * Espone le API REST per trasformare CSV/JSON in UrbanDataset: conversione da
+ * cartella, da nome di estrazione, upload diretto e sorgenti esterne (OpenCruise).
  */
 @Slf4j
 @RestController
@@ -26,49 +27,28 @@ public class TransformerController {
     @Autowired
     private ExternalService externalService;
 
-    /**
-     * Method to convert a csv into transformed UD OWL JSON
-     *
-     * @return operation result
-     */
+    /** Converte i CSV presenti in una cartella secondo la configurazione ricevuta. */
     @PostMapping(Endpoints.CSV)
     public RequestResultDto executeConversionFromFolder(@RequestBody ExtractionDto extractionDto) {
         log.debug("Transformer Controller: csvTransformed -> {}", extractionDto);
         return transformerService.executeConversionFromFolder(extractionDto);
     }
 
-    /**
-     * Method to execute csv conversion from extraction data retrieved by extractionName
-     *
-     * @param extractionName name of extraction
-     *
-     * @return operation result
-     */
+    /** Converte usando la configurazione identificata dal nome di estrazione. */
     @GetMapping(Endpoints.CSV + Endpoints.SLASH + "{extractionName}")
     public RequestResultDto executeConversionFromExtraction(@PathVariable String extractionName) {
         log.debug("Transformer controller: csvTransformedByExtraction -> {}", extractionName);
         return transformerService.executeConversionFromExtraction(extractionName);
     }
 
-    /**
-     * Method to convert a file uploaded into UD OWL JSON
-     *
-     * @param file to convert
-     * @return urban dataset
-     */
+    /** Converte un file CSV caricato via upload. */
     @PostMapping(Endpoints.UPLOAD + Endpoints.SLASH + "{property}")
     public ResultUrbanDataset executeConversionFromUpload(@RequestParam("file") MultipartFile file, @PathVariable String property) {
         log.debug("Transformer controller: uploadCsvTransformed");
         return transformerService.executeConversionFromUpload(file, property);
     }
 
-    /**
-     * Method to convert a JSON retrieved from open cruise platform
-     *
-     * @param jsonDto to convert
-     * @param extractionName to use
-     * @return urban dataset
-     */
+    /** Converte un JSON proveniente da OpenCruise usando la relativa estrazione. */
     @PostMapping(Endpoints.EXTERNAL + Endpoints.OPEN_CRUISE + Endpoints.SLASH + "{extractionName}")
     public ResultUrbanDataset executeConversionFromOpenCruise(@RequestBody JSONDto jsonDto, @PathVariable String extractionName) {
         log.debug("External controller: getFromOpenCruise -> {} - {}", jsonDto, extractionName);

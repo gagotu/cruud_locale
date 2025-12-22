@@ -9,7 +9,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.Date;
 
 /**
- * Extraction Event model
+ * Documento Mongo che rappresenta una configurazione di estrazione:
+ * nome univoco, property associata, sorgenti e parametri di gestione fusi.
  */
 @Data
 @AllArgsConstructor
@@ -46,26 +47,19 @@ public class Extraction {
     @Builder.Default
     private Boolean autoConvert = Boolean.FALSE;
 
-    /**
-     * Time zone of the source CSV/JSON in IANA format (e.g. "Europe/Rome", "America/New_York").
-     * Used to interpret local timestamps when they do not contain an explicit offset.
-     */
+    /** Fuso della sorgente per interpretare timestamp privi di offset. */
     private String timeZone;
 
-    /**
-     * Fixed UTC offset for the target UrbanDataset in the form "+1", "-2" or "+01:30".
-     * All timestamps in the resulting UD will be converted to this offset regardless of the
-     * timezone of the input CSV/JSON.
-     */
+    /** Offset di destinazione dell'UrbanDataset. */
     private String udUtc;
 
-    /**
-     * When true the source file does NOT expose an explicit UTC reference and the ingestion
-     * must rely on {@link #timeZone} plus DST scrubbing to remove ambiguous timestamps. When
-     * false the source already carries an offset/zone and is converted directly.
-     */
+    /** Flag per abilitare la gestione manuale degli orari senza offset esplicito. */
     @Builder.Default
     private Boolean handle = Boolean.FALSE;
+
+    /** Flag per abilitare la logica di merge sulle fasce orarie giornaliere. */
+    @Builder.Default
+    private Boolean fasce = Boolean.FALSE;
 
     @Builder.Default
     private Date createdAt = new Date();

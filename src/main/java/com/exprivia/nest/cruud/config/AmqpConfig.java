@@ -6,15 +6,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Amqp Config class
+ * Configurazione AMQP di base: definisce il converter usato da Rabbit per
+ * serializzare/deserializzare i messaggi verso i DTO del progetto.
  */
 @Configuration
 public class AmqpConfig {
 
     /**
-     * Method that convert a serializable into project object
-     *
-     * @return MessageConverter
+     * Converter permesso per i messaggi che veicolano i DTO (ExtractionDto).
+     * Limitiamo i pattern di classe consentiti per evitare serializzazioni non attese.
      */
     @Bean
     public MessageConverter messageConverter() {

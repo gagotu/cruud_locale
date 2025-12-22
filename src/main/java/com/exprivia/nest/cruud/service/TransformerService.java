@@ -25,11 +25,18 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 /**
- * Transformer Service that expose business methods to convert data into UD OWL
+ * Servizio che orchestra la trasformazione da CSV/JSON sorgente verso l'UrbanDataset.
+ * Carica le proprietà, costruisce periodi e valori a partire dai mapping di configurazione,
+ * e delega la normalizzazione temporale al TimeNormalizationService per garantire offset UD coerenti.
  */
 @SuppressWarnings("unused")
 @Slf4j
@@ -178,6 +185,7 @@ public class TransformerService {
         log.debug("Transformer Service: property '{}' loaded (mappings: {})", propertyDto.getName(), propertyDto.getMappings() != null ? propertyDto.getMappings().keySet() : "none");
 
         ResultUrbanDataset resultUrbanDataset = null; // define a new Result Urban Dataset
+        int sliceMinutes = resolveSliceMinutes(propertyDto);
 
         // Start prepared UD
 
@@ -215,10 +223,18 @@ public class TransformerService {
             // Normalize period timestamps according to the target UD UTC offset and configured time zone handling
             String udUtcStr = extractionDto.getUdUtc();
             boolean handleDst = extractionDto.getHandle() != null && extractionDto.getHandle();
+            List<String> timestampKeys = sliceMinutes > 0 ? List.of("start_ts") : List.of("start_ts", "end_ts");
             if (udUtcStr != null && !udUtcStr.isBlank()) {
                 int originalSize = values != null ? values.size() : 0;
-                values = timeNormalizationService.normalizePeriods(values, extractionDto.getTimeZone(), udUtcStr, handleDst);
+                boolean allowSingleOverlap = extractionDto.getFasce() != null && extractionDto.getFasce();
+                values = timeNormalizationService.normalizePeriods(values, extractionDto.getTimeZone(), udUtcStr, handleDst, timestampKeys, allowSingleOverlap);
                 log.debug("Transformer Service: periods normalized (kept {} of {})", values != null ? values.size() : 0, originalSize);
+            }
+            if (sliceMinutes > 0 && !Boolean.TRUE.equals(extractionDto.getFasce())) {
+                enforceSliceDurationAfterNormalization(values, sliceMinutes);
+            }
+            if (Boolean.TRUE.equals(extractionDto.getFasce())) {
+                values = adjustSlotDurationsAndSort(values);
             }
             urbanDataset.setValues(ValuesDto.builder().line(values).build());
             log.debug("Transformer Service: building urban dataset with {} values", values != null ? values.size() : null);
@@ -274,6 +290,11 @@ public class TransformerService {
                 ? propertyDto.getConfigurations()
                 : new HashMap<>();
 
+        List<String> periods = (List<String>) configurations.get("period");
+        List<Integer> columnsPeriods = retrieveColumnsNumberForHeader(periods, originalHeader);
+        int slice = (int) configurations.getOrDefault("slice", -1);
+        boolean slotMode = Boolean.TRUE.equals(retrievePropertyFilterDto.getFasce());
+
         int dateColumn = -1;
         if (configurations.containsKey("date")) {
             dateColumn = retrieveColumnsNumberForHeader(List.of(configurations.get("date").toString()), originalHeader).getFirst();
@@ -283,58 +304,183 @@ public class TransformerService {
 
         int id = 1;
         HashMap<String, Object> period;
-        while ((line = reader.readNext()) != null) {
-            List<String> periods = (List<String>) configurations.get("period");
-            List<Integer> columnsPeriods = retrieveColumnsNumberForHeader(periods, originalHeader);
 
-            if (!columnsPeriods.isEmpty()) {
-                for (int i=0; i<columnsPeriods.size(); i++) {
+        if (slotMode && !columnsPeriods.isEmpty() && dateColumn >= 0) {
+            List<String[]> allLines = new ArrayList<>();
+            while ((line = reader.readNext()) != null) {
+                allLines.add(line);
+            }
+            LinkedHashMap<String, List<String[]>> rowsByDate = new LinkedHashMap<>();
+            for (String[] l : allLines) {
+                if (l.length <= dateColumn || l[dateColumn] == null || l[dateColumn].isBlank()) {
+                    continue;
+                }
+                rowsByDate.computeIfAbsent(l[dateColumn], k -> new ArrayList<>()).add(l);
+            }
+            for (Map.Entry<String, List<String[]>> entry : rowsByDate.entrySet()) {
+                List<String[]> dayLines = entry.getValue();
+                if (dayLines.size() > 2) {
+                    log.warn("Found more than two rows for date {} in slot mode: keeping first two, discarding {}", entry.getKey(), dayLines.size() - 2);
+                    dayLines = dayLines.subList(0, 2);
+                }
+                String[] firstLine = dayLines.get(0);
+                String[] secondLine = dayLines.size() > 1 ? dayLines.get(1) : null;
+                for (int i = 0; i < columnsPeriods.size(); i++) {
+                    int colIdx = columnsPeriods.get(i);
+                    if (colIdx < 0) {
+                        continue;
+                    }
+                    String periodHeader = originalHeader[colIdx];
+                    String v1 = colIdx < firstLine.length ? firstLine[colIdx] : null;
+                    String v2 = secondLine != null && colIdx < secondLine.length ? secondLine[colIdx] : null;
+                    boolean v1Has = hasNonZeroValue(v1);
+                    boolean v2Has = hasNonZeroValue(v2);
 
-                    if (line[dateColumn] != null && !line[dateColumn].isBlank()) {
-                        //Effettua le operazioni solo se il datetime è valorizzato
-                        ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
+                    if (v1Has && v2Has) {
+                        id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
+                                values, propertyDto, subProperties, id);
+                        id = appendSlotRecord(secondLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
+                                values, propertyDto, subProperties, id);
+                    } else if (v1Has || v2Has) {
+                        String[] src = v1Has ? firstLine : secondLine;
+                        id = appendSlotRecord(src, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
+                                values, propertyDto, subProperties, id);
+                    } else {
+                        // entrambi null/zero: genero un solo record nullo
+                        id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
+                                values, propertyDto, subProperties, id);
+                    }
+                }
+            }
+        } else {
+            while ((line = reader.readNext()) != null) {
+                if (!columnsPeriods.isEmpty()) {
+                    for (int i=0; i<columnsPeriods.size(); i++) {
 
-                        int slice = (int) configurations.getOrDefault("slice", -1);
+                        if (line[dateColumn] != null && !line[dateColumn].isBlank()) {
+                            //Effettua le operazioni solo se il datetime è valorizzato
+                            ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
 
-                        period = Utils.getStartAndEndTimeFromString(line[dateColumn], originalHeader[columnsPeriods.get(i)], slice);
+                            String periodHeader = originalHeader[columnsPeriods.get(i)];
+                            String periodValue = line[columnsPeriods.get(i)];
+                            period = Utils.getStartAndEndTimeFromString(line[dateColumn], periodHeader, periodValue, slice);
 
-                        if (!period.isEmpty())
-                            resultValueDto.setPeriod(period);
+                            if (!period.isEmpty())
+                                resultValueDto.setPeriod(period);
 
-                        int columnDataPeriod = -1;
-                        if (periods.size() > 1) // if there are more of 1 date column
-                            columnDataPeriod = retrieveColumnDataFromPeriod(periods.get(i), originalHeader);
+                            int columnDataPeriod = -1;
+                            if (periods.size() > 1) // if there are more of 1 date column
+                                columnDataPeriod = retrieveColumnDataFromPeriod(periods.get(i), originalHeader);
 
-                        resultValueDto.setProperty(processPropertiesValue(line, columnDataPeriod, propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
+                            resultValueDto.setProperty(processPropertiesValue(line, columnDataPeriod, propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
 
-                        if (elaborateCoordinates(subProperties)) {
-                            resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
+                            if (elaborateCoordinates(subProperties)) {
+                                resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
+                            }
+
+                            id = writeResultValueDto(propertyDto, resultValueDto, values, id);
                         }
 
-                        id = writeResultValueDto(propertyDto, resultValueDto, values, id);
+                    }
+                } else {
+                    ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
+
+                    List<Integer> columnsToRead = retrieveColumnsNumberForHeader(propertiesWithoutSubs, originalHeader);
+
+                    resultValueDto.setProperty(processPropertiesValue(line, columnsToRead.isEmpty() ? -1 : columnsToRead.getFirst(), propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
+
+                    if (elaborateCoordinates(subProperties)) {
+                        resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
                     }
 
-                }
-            } else {
-                ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
-
-                List<Integer> columnsToRead = retrieveColumnsNumberForHeader(propertiesWithoutSubs, originalHeader);
-
-                resultValueDto.setProperty(processPropertiesValue(line, columnsToRead.isEmpty() ? -1 : columnsToRead.getFirst(), propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
-
-                if (elaborateCoordinates(subProperties)) {
-                    resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
+                    id = writeResultValueDto(propertyDto, resultValueDto, values, id);
                 }
 
-                id = writeResultValueDto(propertyDto, resultValueDto, values, id);
             }
-
         }
 
         reader.close(); //close reader csv
         fileReader.close(); //close file
 
         return values;
+    }
+
+    /**
+     * Genera un record a partire da una riga slot e da un indice colonna specifico.
+     */
+    private int appendSlotRecord(String[] sourceLine,
+                                 String dateValue,
+                                 String periodHeader,
+                                 int columnIndex,
+                                 int slice,
+                                 List<String> propertiesWithoutSubs,
+                                 List<ValueDto> dictionary,
+                                 HashMap<String, LinkedList<Integer>> finalHeaderToLine,
+                                 Map<String, String> nullsFieldMap,
+                                 List<ResultValueDto> values,
+                                 PropertyDto propertyDto,
+                                 List<String> subProperties,
+                                 int id) throws JsonProcessingException {
+        if (sourceLine == null) {
+            return id;
+        }
+        if (columnIndex >= sourceLine.length) {
+            log.warn("Skipping slot column {} because line has only {} columns", columnIndex, sourceLine.length);
+            return id;
+        }
+        String[] lineCopy = Arrays.copyOf(sourceLine, Math.max(sourceLine.length, columnIndex + 1));
+        ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
+
+        HashMap<String, Object> period = Utils.getStartAndEndTimeFromString(dateValue, periodHeader, lineCopy[columnIndex], slice);
+        if (!period.isEmpty()) {
+            resultValueDto.setPeriod(period);
+        }
+
+        resultValueDto.setProperty(processPropertiesValue(lineCopy, columnIndex, propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap));
+
+        if (elaborateCoordinates(subProperties)) {
+            resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, lineCopy));
+        }
+
+        return writeResultValueDto(propertyDto, resultValueDto, values, id);
+    }
+
+    private boolean hasNonZeroValue(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        try {
+            double d = Double.parseDouble(Utils.normalizeDecimalSeparator(raw));
+            return d != 0d;
+        } catch (NumberFormatException ex) {
+            // Se non parsabile, consideralo valorizzato per non perdere il dato
+            return true;
+        }
+    }
+
+    /**
+     * Rileva se lo slot cade in una finestra di overlap DST per la timeZone indicata.
+     */
+    private boolean isOverlapSlot(String dateStr, String periodHeader, String timeZone, int slice) {
+        if (timeZone == null || timeZone.isBlank() || dateStr == null || dateStr.isBlank() || periodHeader == null) {
+            return false;
+        }
+        try {
+            ZoneId zone = Utils.parseZoneId(timeZone);
+            HashMap<String, Object> period = Utils.getStartAndEndTimeFromString(dateStr, periodHeader, null, slice);
+            Object startObj = period.get("start_ts");
+            if (startObj == null) {
+                return false;
+            }
+            LocalDateTime ldt = LocalDateTime.parse(startObj.toString());
+            return zone.getRules().getValidOffsets(ldt).size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private Boolean elaborateCoordinates(List<String> strings) {
@@ -367,6 +513,79 @@ public class TransformerService {
         return ++id;
     }
 
+    /**
+     * In modalità fasce, forza la durata della fascia a quella indicata dall'header
+     * (in minuti) e riordina i record per start_ts assegnando id sequenziali.
+     */
+    private List<ResultValueDto> adjustSlotDurationsAndSort(List<ResultValueDto> values) {
+        if (values == null || values.isEmpty()) {
+            return values;
+        }
+        long slotMinutes = inferSlotMinutes(values);
+        for (ResultValueDto v : values) {
+            if (v.getPeriod() == null) {
+                continue;
+            }
+            Object startObj = v.getPeriod().get("start_ts");
+            if (startObj == null) {
+                continue;
+            }
+            LocalDateTime start = parseLdt(startObj.toString());
+            if (start == null) {
+                continue;
+            }
+            LocalDateTime end = start.plusMinutes(slotMinutes);
+            v.getPeriod().put("end_ts", end.toString());
+        }
+        values.sort(Comparator.comparing(v -> parseLdt(v.getPeriod() != null ? Objects.toString(v.getPeriod().get("start_ts"), null) : null),
+                Comparator.nullsLast(Comparator.naturalOrder())));
+        int newId = 1;
+        for (ResultValueDto v : values) {
+            v.setId(newId++);
+        }
+        return values;
+    }
+
+    /**
+     * Deduce la durata dello slot cercando la minima differenza positiva tra start ed end.
+     * Se non disponibile, default 15 minuti.
+     */
+    private long inferSlotMinutes(List<ResultValueDto> values) {
+        long best = Long.MAX_VALUE;
+        for (ResultValueDto v : values) {
+            if (v.getPeriod() == null) {
+                continue;
+            }
+            Object startObj = v.getPeriod().get("start_ts");
+            Object endObj = v.getPeriod().get("end_ts");
+            if (startObj == null || endObj == null) {
+                continue;
+            }
+            LocalDateTime start = parseLdt(startObj.toString());
+            LocalDateTime end = parseLdt(endObj.toString());
+            if (start == null || end == null) {
+                continue;
+            }
+            long minutes = Duration.between(start, end).toMinutes();
+            if (minutes > 0 && minutes < best) {
+                best = minutes;
+            }
+        }
+        return best == Long.MAX_VALUE ? 15 : best;
+    }
+
+    private LocalDateTime parseLdt(String ts) {
+        if (ts == null || ts.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(ts, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            log.warn("Impossible parsing timestamp {} as LocalDateTime", ts);
+            return null;
+        }
+    }
+
     private List<PropertyValueDto> processPropertiesValue(String[] originalLine, int columnToRead,
                     List<String> propertiesWithoutSubs, List<ValueDto> dictionary, HashMap<String, LinkedList<Integer>> finalHeaderToLine,
                     Map<String, String> nullsField) {
@@ -379,10 +598,11 @@ public class TransformerService {
                 log.warn("Skipping value for column index {} because line has only {} columns", columnToRead, originalLine.length);
             } else {
                 String headerName = getKeyByValue(columnToRead, finalHeaderToLine);
+                String raw = originalLine[columnToRead];
 
                 propertiesValue.add(PropertyValueDto.builder()
                         .name(headerName)
-                        .val(Utils.getCorrectValue(headerName, originalLine[columnToRead], dictionary))
+                        .val(Utils.getCorrectValue(headerName, raw, dictionary))
                         .build());
 
                 propertiesWithoutSubs.forEach(property -> {
@@ -462,6 +682,44 @@ public class TransformerService {
                 .build();
 
         return propertyService.getFilteredProperties(propertyFilterDto).getFirst();
+    }
+
+    private int resolveSliceMinutes(PropertyDto propertyDto) {
+        if (propertyDto == null || propertyDto.getConfigurations() == null) {
+            return -1;
+        }
+        Object rawSlice = propertyDto.getConfigurations().get("slice");
+        if (rawSlice instanceof Number number) {
+            return number.intValue();
+        }
+        if (rawSlice instanceof String str && !str.isBlank()) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+                log.warn("Unable to parse slice configuration '{}' for property {}", str, propertyDto.getName());
+            }
+        }
+        return -1;
+    }
+
+    private void enforceSliceDurationAfterNormalization(List<ResultValueDto> values, int sliceMinutes) {
+        if (values == null || sliceMinutes <= 0) {
+            return;
+        }
+        for (ResultValueDto value : values) {
+            HashMap<String, Object> period = value.getPeriod();
+            if (period == null) {
+                continue;
+            }
+            Object startObj = period.get("start_ts");
+            if (startObj == null) {
+                continue;
+            }
+            String updatedEnd = Utils.addMinutesToTimestamp(startObj.toString(), sliceMinutes);
+            if (updatedEnd != null) {
+                period.put("end_ts", updatedEnd);
+            }
+        }
     }
 
 

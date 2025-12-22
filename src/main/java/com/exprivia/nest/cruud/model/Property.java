@@ -10,7 +10,8 @@ import java.util.Date;
 import java.util.HashMap;
 
 /**
- * Property model class
+ * Documento Mongo che rappresenta una property di mapping: nome univoco,
+ * specifica UD, contesto, mapping delle colonne e configurazioni di parsing.
  */
 @AllArgsConstructor
 @NoArgsConstructor

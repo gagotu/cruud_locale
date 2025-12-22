@@ -18,3 +18,7 @@ public class RequestResultDto {
     private List<String> filesCompleted;
 
 }
+/**
+ * Risultato sintetico di una richiesta di trasformazione: descrizione e lista
+ * dei file completati con successo.
+ */

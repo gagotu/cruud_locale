@@ -7,7 +7,8 @@ import java.util.Date;
 import java.util.HashMap;
 
 /**
- * Property dto class
+ * Descrive una property configurata per la conversione: mapping, specifica UD,
+ * contesto e regole di configurazione utilizzate dal transformer.
  */
 @Data
 @Builder

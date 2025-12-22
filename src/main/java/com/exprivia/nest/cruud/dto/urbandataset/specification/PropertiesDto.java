@@ -6,7 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Properties Dto class for UD-specification
+ * Definizione di una proprietà UD: nome, descrizione, tipo dato/unità e
+ * eventuali sotto-proprietà (per periodi).
  */
 @Data
 @Builder

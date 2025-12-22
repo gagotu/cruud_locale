@@ -5,8 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 /**
- * Result Urban Dataset class.
- * With this class you can encapsulate a urban dataset
+ * Wrapper usato per serializzare/deserializzare l'UrbanDataset completo nel payload finale.
  */
 @Data
 @Builder

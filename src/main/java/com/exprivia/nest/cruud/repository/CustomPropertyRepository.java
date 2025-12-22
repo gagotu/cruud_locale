@@ -6,7 +6,8 @@ import com.exprivia.nest.cruud.model.Property;
 import java.util.List;
 
 /**
- * Custom Property Repository
+ * Repository custom per le property: applica filtri dinamici sulle proprietà
+ * in base ai criteri del PropertyFilterDto.
  */
 public interface CustomPropertyRepository {
 

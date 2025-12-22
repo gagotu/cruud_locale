@@ -7,7 +7,8 @@ import lombok.*;
 import java.util.List;
 
 /**
- * class to define input JSON
+ * Rappresenta il payload JSON in ingresso proveniente da sorgenti esterne:
+ * metadata descrittivi e valori dinamici da convertire.
  */
 @Data
 @NoArgsConstructor

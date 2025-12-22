@@ -6,7 +6,8 @@ import com.exprivia.nest.cruud.service.PropertyService;
 import org.mapstruct.Mapper;
 
 /**
- * Property Mapper to mapping Property and PropertyDto
+ * Mapper MapStruct per convertire tra modello Property e DTO.
+ * Ignora createdAt in direzione DTO→model per lasciare la gestione al modello/DB.
  */
 @Mapper(componentModel = "spring", uses = PropertyService.class)
 public interface PropertyMapper {

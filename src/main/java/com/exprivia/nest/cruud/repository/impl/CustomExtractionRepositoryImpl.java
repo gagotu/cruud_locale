@@ -10,17 +10,16 @@ import org.springframework.data.mongodb.core.query.Query;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Implementazione custom per query su Extraction non coperte dal repository standard.
+ * Usa MongoTemplate per costruire filtri dinamici per nome e propertyName.
+ */
 public class CustomExtractionRepositoryImpl implements CustomExtractionRepository {
 
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    /**
-     * Repository method to get extraction by name
-     *
-     * @param name of extraction
-     * @return extraction
-     */
+    /** Restituisce l'estrazione con un dato nome (univoco). */
     public Optional<Extraction> getByExtractionName(String name) {
 
         Query query = new Query();
@@ -31,12 +30,7 @@ public class CustomExtractionRepositoryImpl implements CustomExtractionRepositor
         return Optional.ofNullable(mongoTemplate.findOne(query, Extraction.class));
     }
 
-    /**
-     * Repository method to retrieve a list of extractions for property searched
-     *
-     * @param name of property
-     * @return extraction list
-     */
+    /** Restituisce le estrazioni legate a una determinata property. */
     public List<Extraction> findByPropertyName(String name) {
 
         Query query = new Query();

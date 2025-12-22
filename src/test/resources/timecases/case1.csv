@@ -1,0 +1,6 @@
+entity_id,state,last_changed
+sensor.lab_active_power,0.78,2023-10-23T08:19:23.532Z
+sensor.lab_active_power,0.76,2023-10-23T08:19:53.282Z
+sensor.lab_active_power,0.75,2023-10-23T08:21:53.302Z
+sensor.lab_active_power,0.86,2023-10-23T08:22:53.282Z
+sensor.lab_active_power,0.89,2023-10-23T08:23:23.232Z

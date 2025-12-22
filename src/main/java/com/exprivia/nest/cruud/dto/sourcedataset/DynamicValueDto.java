@@ -7,24 +7,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Property Value Dto class for UD-values
+ * Modello flessibile per valori dinamici del dataset sorgente: accetta qualsiasi
+ * coppia chiave/valore e le espone alla fase di mapping.
  */
 public class DynamicValueDto {
 
     private Map<String, Object> attributes;
 
-    /**
-     * Constructor method
-     */
+    /** Costruttore: inizializza la mappa interna. */
     public DynamicValueDto() {
         this.attributes = new HashMap<>();
     }
 
-    /**
-     * Set attributes
-     *
-     * @param attributes to saved
-     */
+    /** Imposta la mappa di attributi completa. */
     public void setAttributes(HashMap<String, Object> attributes) {
         this.attributes = attributes;
     }

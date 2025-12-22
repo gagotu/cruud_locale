@@ -1,75 +1,54 @@
 package com.exprivia.nest.cruud.utils;
 
 /**
- * Endpoints class for Controller
+ * Raccolta di costanti per comporre gli endpoint REST dei controller.
+ * Centralizza path comuni e segmenti ripetuti.
  */
 public class Endpoints {
 
     //Common endpoints
 
-    /**
-     * constant slash string
-     */
+    /** Costante slash. */
     public static final String SLASH = "/";
 
-    /**
-     * constant all string
-     */
+    /** Segmento per richiedere tutti gli elementi. */
     public static final String ALL = "/all";
 
-    /**
-     * constant delete string
-     */
+    /** Segmento per operazioni di delete. */
     public static final String DELETE = "/delete";
 
     public static final String NAME = "/name";
 
     //Property endpoints
 
-    /**
-     * constant property string
-     */
+    /** Prefisso per le API property. */
     public static final String PROPERTY = "/property";
 
-    /**
-     * constant filter string
-     */
+    /** Segmento per le API di filtro. */
     public static final String FILTER = "/filter";
 
     //Transformer endpoints
 
-    /**
-     * constant transformer string
-     */
+    /** Prefisso per le API transformer. */
     public static final String TRANSFORMER = "/transformer";
 
-    /**
-     * constant csv string
-     */
+    /** Segmento CSV. */
     public static final String CSV = "/csv";
 
-    /**
-     * Constant upload string
-     */
+    /** Segmento upload. */
     public static final String UPLOAD = "/upload";
 
     //Extraction endpoints
 
-    /**
-     * extraction controller string
-     */
+    /** Prefisso per le API extraction. */
     public static final String EXTRACTION = "/extraction";
 
     //External endpoints
 
-    /**
-     * External endpoint string
-     */
+    /** Prefisso per le API esterne. */
     public static final String EXTERNAL = "/external";
 
-    /**
-     * External endpoint string for open cruise platform
-     */
+    /** Segmento per integrazione OpenCruise. */
     public static final String OPEN_CRUISE = "/open-cruise";
 
 }

@@ -11,7 +11,8 @@ import java.util.HashMap;
 import java.util.List;
 
 /**
- * Result Value Dto for UD-values
+ * Una riga di valori dell'UrbanDataset: id sequenziale, periodo temporale,
+ * proprietà valorizzate e coordinate opzionali.
  */
 @Data
 @Builder

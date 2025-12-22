@@ -3,7 +3,8 @@ package com.exprivia.nest.cruud.dto.sourcedataset;
 import lombok.*;
 
 /**
- * Object value dto that contain data and params to conversion value
+ * Descrive come interpretare un valore del dataset sorgente: nome di destinazione,
+ * eventuale funzione di trasformazione, valore alternativo e gestione coordinate.
  */
 @Data
 @Builder

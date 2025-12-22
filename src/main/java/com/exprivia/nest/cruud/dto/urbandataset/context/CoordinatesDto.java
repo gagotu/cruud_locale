@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Coordinates Dto class for UD-context
+ * Coordinate spaziali del contesto UD (formato, latitudine, longitudine, altezza).
  */
 @Data
 @Builder

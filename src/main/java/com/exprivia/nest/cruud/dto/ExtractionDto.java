@@ -6,7 +6,8 @@ import lombok.*;
 import java.util.Date;
 
 /**
- * Class Extraction
+ * Rappresenta la configurazione di un'estrazione: dove leggere/scrivere i file,
+ * quali mapping usare e come trattare il fuso orario dei dati sorgente e di destinazione.
  */
 @Data
 @Builder
@@ -41,24 +42,31 @@ public class ExtractionDto {
     private Date createdAt;
 
     /**
-     * Time zone of the source CSV/JSON in IANA format (e.g. "Europe/Rome", "America/New_York").
-     * Used to interpret local timestamps when they do not contain an explicit offset.
+     * Fuso della sorgente CSV/JSON in formato IANA (es. "Europe/Rome").
+     * Serve a interpretare i timestamp locali quando non riportano un offset esplicito.
      */
     @JsonAlias({"csvTimezone"})
     private String timeZone;
 
     /**
-     * Fixed UTC offset for the target UrbanDataset in the form "+1", "-2" or "+01:30".
-     * All timestamps in the resulting UD will be converted to this offset regardless of the
-     * timezone of the input CSV/JSON.
+     * Offset UTC di destinazione per l'UrbanDataset (es. "+1", "-2", "+01:30").
+     * Tutti i timestamp convertiti vengono normalizzati a questo offset.
      */
     private String udUtc;
 
     /**
-     * When true the source file does NOT expose an explicit UTC reference and the ingestion
-     * must rely on {@link #timeZone} plus DST scrubbing to remove ambiguous timestamps. When
-     * false the source already carries an offset/zone and is converted directly.
+     * Se true indica che il file sorgente non porta un offset esplicito: si usa timeZone
+     * e si attiva lo scrubbing DST per evitare ambiguità; se false ci si affida all'offset
+     * già presente nei dati.
      */
     private Boolean handle;
+
+    /**
+     * Abilita la logica speciale per file a fasce orarie (24/48/96 slot per giorno)
+     * con doppia riga per gestire l'overlap DST. Disabilitata di default per non
+     * impattare gli altri formati.
+     */
+    @Builder.Default
+    private Boolean fasce = Boolean.FALSE;
 
 }

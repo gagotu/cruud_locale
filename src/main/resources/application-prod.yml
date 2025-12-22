@@ -26,3 +26,18 @@ spring:
     queues:
       convert_csv: convert_csv
       clean_csv: clean_csv
+# === LOGGING ATTIVO ===
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    com.exprivia.nest.cruud: DEBUG   # debug solo per il tuo pacchetto
+  file:
+    name: logs/cruud.log             # scrive anche su file (rotazione consigliata con logback-spring.xml)
+
+# === CONFIGURAZIONE UD GLOBALE ===
+ud:
+  maxRowsPerUd: 0              # 0 = nessun limite; >0 abilita chunking e suffissi _1, _2, ...
+  dst:
+    overlapPolicy: KEEP_LATER        
+    gapPolicy: SHIFT_FORWARD_COMPRESS 

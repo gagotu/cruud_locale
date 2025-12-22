@@ -12,18 +12,15 @@ import org.springframework.util.CollectionUtils;
 import java.util.List;
 
 /**
- * Custom Property Repository Impl
+ * Implementazione custom per query dinamiche sulle property. Costruisce filtri
+ * su nome e id utilizzando MongoTemplate.
  */
 public class CustomPropertyRepositoryImpl implements CustomPropertyRepository {
 
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    /**
-     * Get selected properties
-     * @param dto selected properties to find
-     * @return all selected properties
-     */
+    /** Restituisce le property filtrate in base ai criteri indicati nel filtro. */
     public List<Property> getFilteredProperties(PropertyFilterDto dto) {
 
         Query query = new Query();

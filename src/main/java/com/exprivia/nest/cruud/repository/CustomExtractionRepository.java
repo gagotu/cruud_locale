@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Custom extraction repository interface
+ * Repository custom per query non standard sulle estrazioni (per nome univoco
+ * e per nome property).
  */
 public interface CustomExtractionRepository {
 

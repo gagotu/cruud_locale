@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -39,12 +40,19 @@ import java.time.ZoneId;
 import java.time.zone.ZoneRules;
 import java.time.zone.ZoneOffsetTransition;
 import java.time.DateTimeException;
+import java.time.temporal.ChronoField;
 
 /**
- * Utils class for cruud
+ * Utility helper used across the conversion pipeline. It centralizes small
+ * transformations (file handling, math helpers) and the time parsing helpers
+ * that prepare raw CSV periods before they are normalized to the UrbanDataset
+ * target offset.
  */
 @Slf4j
 public class Utils {
+
+    private static final Pattern TIME_COMPONENT_PATTERN = Pattern.compile("\\d{1,2}:\\d{2}");
+    private static final Pattern DATE_COMPONENT_PATTERN = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})|(\\d{2}/\\d{2}/\\d{4})|(\\d{8})");
 
     /**
      * Retrieve start and end time from string and slice
@@ -53,11 +61,17 @@ public class Utils {
      * @param slice to calculate time
      * @return array times
      */
-    public static HashMap<String, Object> getStartAndEndTimeFromString(String date, String string, int slice) {
+    /**
+     * Build a start/end period string pair from the CSV date plus the period column.
+     * - If slice<0 we treat the header as an explicit range (HH:mm-HH:mm).
+     * - If slice==0 we keep the instant as-is (start=end) or expand a range header.
+     * - If slice>0 we treat the header as a slot index (eaN) and compute minutes.
+     */
+    public static HashMap<String, Object> getStartAndEndTimeFromString(String date, String periodHeader, String periodValue, int slice) {
         HashMap<String, Object> period = new HashMap<>();
 
         if (slice < 0) {
-            String[] time = string.split("-");
+            String[] time = periodHeader.split("-");
             String timeEnd = time[1];
             time = time[0].split(":");
 
@@ -69,12 +83,29 @@ public class Utils {
             period.put("start_ts", convertMinutesInHoursString(date, minutesStart));
             period.put("end_ts", convertMinutesInHoursString(date, minutesEnd));
         } else if(slice == 0) {
-            period.put("start_ts", convertMinutesInHoursString(date, 0));
-            period.put("end_ts", convertMinutesInHoursString(date, 0));
+            // If header is a range like 00:00-00:15, derive start/end from it
+            if (periodHeader != null && periodHeader.contains("-") && periodHeader.contains(":")) {
+                String[] time = periodHeader.split("-");
+                if (time.length == 2) {
+                    String[] startParts = time[0].split(":");
+                    String[] endParts = time[1].split(":");
+                    int minutesStart = Integer.parseInt(startParts[0]) * 60 + Integer.parseInt(startParts[1]);
+                    int minutesEnd = Integer.parseInt(endParts[0]) * 60 + Integer.parseInt(endParts[1]);
+                    period.put("start_ts", convertMinutesInHoursString(date, minutesStart));
+                    period.put("end_ts", convertMinutesInHoursString(date, minutesEnd));
+                    return period;
+                }
+            }
+            String candidate = mergeDateAndTimeColumns(date, periodValue);
+            if (candidate != null && !candidate.isBlank()) {
+                period.put("start_ts", candidate);
+                period.put("end_ts", candidate);
+            }
         } else {
             String regex = "\\d+";
             Pattern pattern = Pattern.compile(regex);
-            Matcher matcher = pattern.matcher(string);
+            Matcher matcher = pattern.matcher(periodHeader);
+            boolean slotResolved = false;
 
             while (matcher.find()) {
                 int number = Integer.parseInt(matcher.group());
@@ -83,10 +114,169 @@ public class Utils {
 
                 period.put("start_ts", convertMinutesInHoursString(date, minutesStart));
                 period.put("end_ts", convertMinutesInHoursString(date, minutesEnd));
+                slotResolved = true;
+            }
+
+            if (!slotResolved) {
+                String candidate = mergeDateAndTimeColumns(date, periodValue);
+                if (candidate != null && !candidate.isBlank()) {
+                    period.put("start_ts", candidate);
+                    period.put("end_ts", candidate);
+                }
             }
         }
 
+        enforceSliceDuration(period, slice);
         return period;
+    }
+
+    /**
+     * Merge date and period columns taking into account whichever already encodes a full timestamp.
+     */
+    private static String mergeDateAndTimeColumns(String date, String periodValue) {
+        String datePart = trimToNull(date);
+        String periodPart = trimToNull(periodValue);
+
+        if (isFullTimestamp(datePart)) {
+            return datePart;
+        }
+        if (isFullTimestamp(periodPart)) {
+            return periodPart;
+        }
+        if (datePart == null && periodPart == null) {
+            return null;
+        }
+        if (datePart == null) {
+            return periodPart;
+        }
+        if (periodPart == null) {
+            return datePart;
+        }
+
+        String sanitizedDate = trimToNull(removeTrailingT(datePart));
+        String sanitizedPeriod = trimToNull(removeLeadingT(periodPart));
+        if (sanitizedDate == null && sanitizedPeriod == null) {
+            return null;
+        }
+        if (sanitizedDate == null) {
+            return sanitizedPeriod;
+        }
+        if (sanitizedPeriod == null) {
+            return sanitizedDate;
+        }
+
+        String delimiter;
+        if (sanitizedDate.contains("T")) {
+            delimiter = "";
+        } else if (sanitizedDate.contains(" ")) {
+            delimiter = " ";
+        } else {
+            delimiter = "T";
+        }
+        return sanitizedDate + delimiter + sanitizedPeriod;
+    }
+
+    private static boolean isFullTimestamp(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        return DATE_COMPONENT_PATTERN.matcher(value).find()
+                && TIME_COMPONENT_PATTERN.matcher(value).find();
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String removeTrailingT(String value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.endsWith("T") || value.endsWith("t")) {
+            return value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
+
+    private static void enforceSliceDuration(HashMap<String, Object> period, int slice) {
+        if (slice <= 0 || period == null) {
+            return;
+        }
+        Object startObj = period.get("start_ts");
+        String start = startObj != null ? startObj.toString() : null;
+        if (start == null || start.isBlank()) {
+            return;
+        }
+        String adjusted = addMinutesToTimestamp(start, slice);
+        if (adjusted != null) {
+            period.put("end_ts", adjusted);
+        }
+    }
+
+    public static String addMinutesToTimestamp(String timestamp, int minutes) {
+        String trimmed = timestamp != null ? timestamp.trim() : null;
+        if (trimmed == null || trimmed.isBlank()) {
+            return null;
+        }
+        int fractionDigits = detectFractionDigits(trimmed);
+        try {
+            OffsetDateTime offset = OffsetDateTime.parse(trimmed);
+            DateTimeFormatter formatter = buildFormatter(true, fractionDigits);
+            return offset.plusMinutes(minutes).format(formatter);
+        } catch (DateTimeParseException ignored) { }
+        try {
+            LocalDateTime local = LocalDateTime.parse(trimmed);
+            DateTimeFormatter formatter = buildFormatter(false, fractionDigits);
+            return local.plusMinutes(minutes).format(formatter);
+        } catch (DateTimeParseException ignored) { }
+        return null;
+    }
+
+    private static DateTimeFormatter buildFormatter(boolean withOffset, int fractionDigits) {
+        DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
+                .appendPattern("yyyy-MM-dd'T'HH:mm:ss");
+        if (fractionDigits > 0) {
+            builder.appendFraction(ChronoField.NANO_OF_SECOND, fractionDigits, fractionDigits, true);
+        }
+        if (withOffset) {
+            builder.appendOffsetId();
+        }
+        return builder.toFormatter();
+    }
+
+    private static int detectFractionDigits(String value) {
+        int dot = value.indexOf('.');
+        if (dot < 0) {
+            return 0;
+        }
+        int idx = dot + 1;
+        int digits = 0;
+        while (idx < value.length()) {
+            char c = value.charAt(idx);
+            if (!Character.isDigit(c)) {
+                break;
+            }
+            digits++;
+            idx++;
+        }
+        if (digits > 9) {
+            digits = 9;
+        }
+        return digits;
+    }
+
+    private static String removeLeadingT(String value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.startsWith("T") || value.startsWith("t")) {
+            return value.substring(1);
+        }
+        return value;
     }
 
     /**
@@ -295,20 +485,24 @@ public class Utils {
      */
     public static String getCorrectValue(String header, String value, List<ValueDto> dictionary) {
 
-        if (value.isBlank())
+        String sanitized = normalizeDecimalSeparator(value);
+
+        if (sanitized == null || sanitized.isBlank())
             return "0";
 
         for (ValueDto valueDto : dictionary) {
             if (valueDto.getName().equalsIgnoreCase(header) ||
                     (valueDto.getNameForNegative() != null && valueDto.getNameForNegative().equalsIgnoreCase(header))) {
 
-                return (valueDto.getFunction() == null || valueDto.getFunction().isBlank())
-                        ? value
-                        : Maths.execute(value, valueDto.getFunction(), valueDto.getAlternativeValue());
+                String result = (valueDto.getFunction() == null || valueDto.getFunction().isBlank())
+                        ? sanitized
+                        : Maths.execute(sanitized, valueDto.getFunction(), valueDto.getAlternativeValue());
+
+                return result != null ? result : "0";
             }
         }
 
-        return value;
+        return sanitized;
 
     }
 
@@ -320,11 +514,12 @@ public class Utils {
      */
     public static String getNumberOrNullString(String value, String alternativeResponse) {
         try {
+            String normalized = normalizeDecimalSeparator(value);
             // Tenta di convertire la stringa in un double.
             // Se la conversione ha successo, significa che la stringa rappresenta un numero.
-            Double.parseDouble(value);
+            Double.parseDouble(normalized);
             // Se non ci sono eccezioni, restituisci la stringa originale.
-            return value;
+            return normalized;
         } catch (NumberFormatException e) {
             // Se si verifica una NumberFormatException, significa che la stringa non è un numero valido.
             // In questo caso, restituisci la stringa "null".
@@ -341,10 +536,22 @@ public class Utils {
      */
     public static String getPositiveOrNullString(String value, String alternativeResponse) {
         try {
-            return Double.parseDouble(value) >= 0 ? value : alternativeResponse;
+            String normalized = normalizeDecimalSeparator(value);
+            return Double.parseDouble(normalized) >= 0 ? normalized : alternativeResponse;
         } catch (NumberFormatException e) {
             return alternativeResponse;
         }
+    }
+
+    /**
+     * Normalizza il separatore decimale convertendo eventuali virgole in punti.
+     * Serve per interpretare correttamente numeri europei (es. "0,42") come double.
+     */
+    public static String normalizeDecimalSeparator(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace(',', '.').trim();
     }
 
     private static String convertMinutesInHoursString(String date, int minutes) {

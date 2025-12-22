@@ -1,14 +1,11 @@
 package com.exprivia.nest.cruud.exception;
 
 /**
- * Duplicate Name Exception class
+ * Eccezione custom per segnalare la creazione di un'entità con nome duplicato.
  */
 public class DuplicateNameException extends Exception {
 
-    /**
-     * Constructor for Exception
-     * @param message exception
-     */
+    /** Costruttore con messaggio descrittivo. */
     public DuplicateNameException(String message) {
         super(message);
     }

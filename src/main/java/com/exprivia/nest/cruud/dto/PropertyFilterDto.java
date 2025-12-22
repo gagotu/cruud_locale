@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * Property Filter Dto class
+ * DTO di filtro per selezionare property per id o per nome.
  */
 @Data
 @NoArgsConstructor

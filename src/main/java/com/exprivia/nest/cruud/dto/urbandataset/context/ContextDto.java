@@ -8,7 +8,8 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 /**
- * Context Dto class for UD-context
+ * Contesto dell'UrbanDataset: produttore, fuso di riferimento, timestamp,
+ * coordinate, lingua e note opzionali.
  */
 @Data
 @Builder

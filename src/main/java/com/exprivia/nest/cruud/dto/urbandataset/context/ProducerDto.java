@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Producer Dto class for UD-context
+ * Identificativo del produttore dell'UrbanDataset (id e schemeID).
  */
 @Data
 @Builder

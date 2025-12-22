@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * MetadataDto class for source dataset
+ * Metadati associati alle colonne/attributi del dataset sorgente.
  */
 @Data
 @Builder

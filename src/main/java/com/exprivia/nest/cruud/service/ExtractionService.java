@@ -12,7 +12,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Extraction Service that expose business methods for Extraction Events
+ * Servizio applicativo per gestire le configurazioni di estrazione: CRUD e
+ * ricerca per nome/property, con mapping tra DTO e modello Mongo.
  */
 @Slf4j
 @Service
@@ -24,12 +25,7 @@ public class ExtractionService {
     @Autowired
     private ExtractionMapper extractionMapper;
 
-    /**
-     * Method to create Extraction Event
-     *
-     * @param dto to create
-     * @return dto created
-     */
+    /** Crea una nuova estrazione e restituisce il DTO persistito. */
     public ExtractionDto create(ExtractionDto dto) {
         log.debug("Extraction Service: Create -> {}", dto);
 
@@ -38,47 +34,28 @@ public class ExtractionService {
         );
     }
 
-    /**
-     * Get all Extraction Events
-     *
-     * @return ExtractionEvents list
-     */
+    /** Restituisce tutte le estrazioni. */
     public List<ExtractionDto> getAll() {
         log.debug("Extraction Service: getAll");
 
         return convertListInDto(extractionRepository.findAll());
     }
 
-    /**
-     * Get optional extraction event by id
-     *
-     * @param id to search
-     * @return optional dto
-     */
+    /** Restituisce l'estrazione per id (se esiste). */
     public Optional<ExtractionDto> getById(String id) {
         log.debug("Extraction Service: getById -> {}", id);
 
         return extractionRepository.findById(id).map(extractionMapper::modelToDto);
     }
 
-    /**
-     * Get extraction by name method
-     *
-     * @param extractionName name of extraction
-     * @return extraction
-     */
+    /** Restituisce l'estrazione per nome univoco. */
     public Optional<ExtractionDto> getByExtractionName(String extractionName) {
         log.debug("Extraction Service: getByName -> {}", extractionName);
 
         return extractionRepository.getByExtractionName(extractionName).map(extractionMapper::modelToDto);
     }
 
-    /**
-     * Get extractions list by name property
-     *
-     * @param propertyName name of property
-     * @return extractions list
-     */
+    /** Restituisce le estrazioni collegate a una property. */
     public List<ExtractionDto> findByPropertyName(String propertyName) {
         log.debug("Extraction Service: findByPropertyName -> {}", propertyName);
 
@@ -87,11 +64,7 @@ public class ExtractionService {
                 .toList();
     }
 
-    /**
-     * Remove extraction event by id
-     *
-     * @param id to remove
-     */
+    /** Cancella una estrazione per id. */
     public void remove(String id) {
         log.debug("Extraction Service: remove -> {}", id);
         extractionRepository.deleteById(id);

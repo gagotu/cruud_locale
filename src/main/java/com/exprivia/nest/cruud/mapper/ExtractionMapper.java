@@ -6,7 +6,8 @@ import com.exprivia.nest.cruud.service.ExtractionService;
 import org.mapstruct.Mapper;
 
 /**
- * Extraction Event Mapper to map model and dto
+ * Mapper MapStruct per convertire tra modello Extraction e DTO.
+ * Ignora createdAt in direzione DTO→model per lasciare che sia il modello a gestire la data.
  */
 @Mapper(componentModel = "spring", uses = ExtractionService.class)
 public interface ExtractionMapper {

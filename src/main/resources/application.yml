@@ -14,7 +14,7 @@ ud:
   # number of values exceeds this threshold the conversion will automatically
   # generate multiple UD files with suffixed names (e.g., _1, _2). A value of
   # 0 or a negative value means no limit (all rows in a single UD).
-  maxRowsPerUd: 1000
+  maxRowsPerUd: 0
   dst:
     # Policy for selecting which occurrence to keep when an overlap occurs during DST rollback.
     # KEEP_LATER means keep the later (standard time) instant. KEEP_EARLIER would keep the

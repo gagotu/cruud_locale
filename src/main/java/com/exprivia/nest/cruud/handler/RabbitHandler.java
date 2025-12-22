@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Rabbit Handler, used to listen into queues
+ * Listener per le code RabbitMQ: attiva conversioni automatiche e cleaning
+ * in base alle configurazioni delle estrazioni.
  */
 @Slf4j
 @Component
@@ -32,7 +33,8 @@ public class RabbitHandler {
     private ObjectMapper objectMapper;
 
     /**
-     * Method that consume message from convert csv queue
+     * Consuma i messaggi dalla coda di conversione: per ogni estrazione con
+     * autoConvert attivo esegue la trasformazione dai file sorgente.
      */
     @RabbitListener(queues = "${spring.rabbitmq.queues.convert_csv}")
     public void consumeConvertCsv(String msg) {
@@ -66,7 +68,8 @@ public class RabbitHandler {
     }
 
     /**
-     * Method that consume message from clean csv queue
+     * Consuma i messaggi dalla coda di cleaning: per ogni estrazione con
+     * autoClean attivo pulisce la cartella dei file completati.
      */
     @RabbitListener(queues = "${spring.rabbitmq.queues.clean_csv}")
     public void consumeCleanCsv(String msg) {

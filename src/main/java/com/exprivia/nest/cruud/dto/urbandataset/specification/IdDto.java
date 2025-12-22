@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * IdDto class for UD-specification
+ * Identificativo della specifica UD (valore e schema di riferimento).
  */
 @Data
 @Builder

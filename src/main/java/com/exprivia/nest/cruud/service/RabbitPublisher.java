@@ -7,7 +7,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Rabbit Publisher class, used to write message into queues
+ * Publisher periodico su RabbitMQ: invia messaggi alle code di conversione e
+ * pulizia con una frequenza configurata.
  */
 @Service
 public class RabbitPublisher {
@@ -21,9 +22,7 @@ public class RabbitPublisher {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
-    /**
-     * Publish Message into convert_csv queue with a delay
-     */
+    /** Pubblica un messaggio sulla coda di conversione con la frequenza configurata. */
     @Scheduled(fixedDelayString = "${spring.rabbitmq.auto_convert}")
     public void publishMessageConvert() {
         rabbitTemplate.convertAndSend(convert_csv_queue, "Publish convert event...");

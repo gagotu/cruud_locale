@@ -22,7 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * External Service that expose business methods to retrieve JSON from other platforms
+ * Servizio che chiama piattaforme esterne (es. OpenCruise), recupera JSON
+ * di input e li trasforma in UrbanDataset usando le property/estrazioni configurate.
  */
 @Slf4j
 @Service

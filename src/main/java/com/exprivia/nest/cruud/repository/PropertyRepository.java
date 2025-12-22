@@ -5,7 +5,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
 /**
- * Property Repository
+ * Repository Mongo per le property; estende il custom repo per filtri dinamici.
  */
 @Repository
 public interface PropertyRepository extends MongoRepository<Property, String>, CustomPropertyRepository {

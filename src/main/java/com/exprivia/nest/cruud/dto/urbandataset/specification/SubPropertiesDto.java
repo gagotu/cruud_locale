@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * SubProperties Dto class for UD-specification
+ * Elenco delle sotto-proprietà associate a una property (es. start_ts/end_ts per un periodo).
  */
 @Data
 @Builder

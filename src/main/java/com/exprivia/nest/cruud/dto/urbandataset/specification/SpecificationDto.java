@@ -6,7 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Specification Dto class for UD-specification
+ * Descrive la specifica dell'UrbanDataset: id/versione/nome/URI e l'elenco
+ * delle proprietà previste.
  */
 @Data
 @Builder

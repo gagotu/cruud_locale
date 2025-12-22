@@ -6,7 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Rabbit Config class, used to create a queues
+ * Configurazione delle code RabbitMQ usate per le richieste di conversione/cleaning.
+ * Qui definiamo i nomi delle code e le esponiamo come bean Spring.
  */
 @Configuration
 public class RabbitConfig {
@@ -18,9 +19,7 @@ public class RabbitConfig {
     private String clean_csv_queue;
 
     /**
-     * Method that create a convert csv queue
-     *
-     * @return Queue created
+     * Coda per le richieste di conversione CSV→UD.
      */
     @Bean
     public Queue createQueueConvertCsv() {
@@ -28,9 +27,7 @@ public class RabbitConfig {
     }
 
     /**
-     * Method that create a clean csv queue
-     *
-     * @return Queue created
+     * Coda per le richieste di pulizia CSV.
      */
     @Bean
     public Queue createQueueCleanCsv() {

@@ -1,0 +1,5 @@
+entity_id,state,data,orario
+sensor.lab_active_power,0.80,2023-10-29,00:40:00
+sensor.lab_active_power,0.81,2023-10-29,01:00:00
+sensor.lab_active_power,0.82,2023-10-29,01:20:00
+sensor.lab_active_power,0.83,2023-10-29,01:40:00

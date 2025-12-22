@@ -7,7 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Property Value Dto class for UD-values
+ * Coppia nome/valore di una property nell'UrbanDataset.
  */
 @Data
 @Builder

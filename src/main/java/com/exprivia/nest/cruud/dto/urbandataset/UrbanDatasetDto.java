@@ -9,7 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Urban Dataset Dto class
+ * Rappresenta l'UrbanDataset completo: specifica, contesto e valori associati.
  */
 @Data
 @Builder
