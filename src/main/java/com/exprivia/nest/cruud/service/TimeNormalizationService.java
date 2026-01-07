@@ -1,7 +1,7 @@
 package com.exprivia.nest.cruud.service;
 
 import com.exprivia.nest.cruud.dto.urbandataset.values.ResultValueDto;
-import com.exprivia.nest.cruud.utils.Utils;
+import com.exprivia.nest.cruud.utils.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -58,7 +58,7 @@ public class TimeNormalizationService {
             return values;
         }
 
-        ZoneOffset targetOffset = Utils.parseUtcOffset(udUtcOffset);
+        ZoneOffset targetOffset = TimeUtils.parseUtcOffset(udUtcOffset);
         if (!handleDst) {
             log.info("Normalizing timestamps with explicit UTC offsets (targetOffset={})", targetOffset);
             List<ResultValueDto> normalized = normalizeWithExplicitUtc(values, targetOffset, timestampKeys);
@@ -71,7 +71,7 @@ public class TimeNormalizationService {
             return List.of();
         }
 
-        ZoneId sourceZone = Utils.parseZoneId(timeZone);
+        ZoneId sourceZone = TimeUtils.parseZoneId(timeZone);
         log.info("Normalizing timestamps without UTC using timeZone={} (targetOffset={})", sourceZone, targetOffset);
         List<ResultValueDto> normalized = normalizeWithoutUtc(values, sourceZone, targetOffset, timestampKeys, allowSingleOverlap);
         log.info("Normalization completed. kept={} dropped={}", normalized.size(), values.size() - normalized.size());

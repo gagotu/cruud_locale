@@ -39,7 +39,7 @@ logging:
 
 # === CONFIGURAZIONE UD GLOBALE ===
 ud:
-  maxRowsPerUd: 0              # 0 = nessun limite; >0 abilita chunking e suffissi _1, _2, ...
+  maxRowsPerUd: 1000             # 0 = nessun limite; >0 abilita chunking e suffissi _1, _2, ...
   dst:
     overlapPolicy: KEEP_LATER        
     gapPolicy: SHIFT_FORWARD_COMPRESS 

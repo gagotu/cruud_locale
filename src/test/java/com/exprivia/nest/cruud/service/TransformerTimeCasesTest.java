@@ -4,7 +4,7 @@ import com.exprivia.nest.cruud.dto.*;
 import com.exprivia.nest.cruud.dto.sourcedataset.ValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ResultValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.PropertyValueDto;
-import com.exprivia.nest.cruud.utils.Utils;
+import com.exprivia.nest.cruud.utils.TimeUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -331,7 +331,7 @@ class TransformerTimeCasesTest {
     }
 
     private String expectedUtc(String targetOffset, String isoInstantOrOffset) {
-        ZoneOffset target = Utils.parseUtcOffset(targetOffset);
+        ZoneOffset target = TimeUtils.parseUtcOffset(targetOffset);
         var instant = OffsetDateTime.parse(isoInstantOrOffset).toInstant();
         return instant.atOffset(target).toLocalDateTime().toString();
     }

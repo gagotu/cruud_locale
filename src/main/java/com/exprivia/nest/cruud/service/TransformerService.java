@@ -10,7 +10,9 @@ import com.exprivia.nest.cruud.dto.urbandataset.specification.SpecificationDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.PropertyValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ResultValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ValuesDto;
-import com.exprivia.nest.cruud.utils.Utils;
+import com.exprivia.nest.cruud.utils.FileUtils;
+import com.exprivia.nest.cruud.utils.MappingUtils;
+import com.exprivia.nest.cruud.utils.TimeUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -77,7 +79,7 @@ public class TransformerService {
     public RequestResultDto executeConversionFromFolder(ExtractionDto extractionDto) {
         log.debug("Transformer Service: Transformer -> {}", extractionDto);
 
-        List<String> filesRetrieved = Utils.getFilesNameFromPath(extractionDto.getSourceFilesPath());
+        List<String> filesRetrieved = FileUtils.getFilesNameFromPath(extractionDto.getSourceFilesPath());
         log.debug("Transformer Service: files retrieved from {} -> {}", extractionDto.getSourceFilesPath(), filesRetrieved);
 
         RequestResultDto result = RequestResultDto.builder().build();
@@ -168,7 +170,7 @@ public class TransformerService {
             throw new RuntimeException(e);
         }
 
-        Utils.cleanFilesCompleted(tempFolderPath); //remove temporary file used.
+        FileUtils.cleanFilesCompleted(tempFolderPath); //remove temporary file used.
 
         return resultUrbanDataset;
 
@@ -205,7 +207,7 @@ public class TransformerService {
             throw new RuntimeException(e);
         }
 
-        Utils.updateSpecificationAndContext(specificationDto, contextDto, extractionDto);
+        MappingUtils.updateSpecificationAndContext(specificationDto, contextDto, extractionDto);
 
         UrbanDatasetDto urbanDataset = UrbanDatasetDto.builder()
                 .specification(specificationDto)
@@ -300,7 +302,7 @@ public class TransformerService {
             dateColumn = retrieveColumnsNumberForHeader(List.of(configurations.get("date").toString()), originalHeader).getFirst();
         }
 
-        Map<String, String> nullsFieldMap = Utils.toStringMap(configurations.get("nullsField"));
+        Map<String, String> nullsFieldMap = MappingUtils.toStringMap(configurations.get("nullsField"));
 
         int id = 1;
         HashMap<String, Object> period;
@@ -367,7 +369,7 @@ public class TransformerService {
 
                             String periodHeader = originalHeader[columnsPeriods.get(i)];
                             String periodValue = line[columnsPeriods.get(i)];
-                            period = Utils.getStartAndEndTimeFromString(line[dateColumn], periodHeader, periodValue, slice);
+                            period = TimeUtils.getStartAndEndTimeFromString(line[dateColumn], periodHeader, periodValue, slice);
 
                             if (!period.isEmpty())
                                 resultValueDto.setPeriod(period);
@@ -435,7 +437,7 @@ public class TransformerService {
         String[] lineCopy = Arrays.copyOf(sourceLine, Math.max(sourceLine.length, columnIndex + 1));
         ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
 
-        HashMap<String, Object> period = Utils.getStartAndEndTimeFromString(dateValue, periodHeader, lineCopy[columnIndex], slice);
+        HashMap<String, Object> period = TimeUtils.getStartAndEndTimeFromString(dateValue, periodHeader, lineCopy[columnIndex], slice);
         if (!period.isEmpty()) {
             resultValueDto.setPeriod(period);
         }
@@ -454,7 +456,7 @@ public class TransformerService {
             return false;
         }
         try {
-            double d = Double.parseDouble(Utils.normalizeDecimalSeparator(raw));
+            double d = Double.parseDouble(MappingUtils.normalizeDecimalSeparator(raw));
             return d != 0d;
         } catch (NumberFormatException ex) {
             // Se non parsabile, consideralo valorizzato per non perdere il dato
@@ -470,8 +472,8 @@ public class TransformerService {
             return false;
         }
         try {
-            ZoneId zone = Utils.parseZoneId(timeZone);
-            HashMap<String, Object> period = Utils.getStartAndEndTimeFromString(dateStr, periodHeader, null, slice);
+            ZoneId zone = TimeUtils.parseZoneId(timeZone);
+            HashMap<String, Object> period = TimeUtils.getStartAndEndTimeFromString(dateStr, periodHeader, null, slice);
             Object startObj = period.get("start_ts");
             if (startObj == null) {
                 return false;
@@ -602,22 +604,22 @@ public class TransformerService {
 
                 propertiesValue.add(PropertyValueDto.builder()
                         .name(headerName)
-                        .val(Utils.getCorrectValue(headerName, raw, dictionary))
+                        .val(MappingUtils.getCorrectValue(headerName, raw, dictionary))
                         .build());
 
                 propertiesWithoutSubs.forEach(property -> {
                     if (!property.equalsIgnoreCase(headerName)) {
-                        Utils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
+                        MappingUtils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
                     }
                 });
             }
         } else {
             propertiesWithoutSubs.forEach(property -> {
-                Utils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
+                MappingUtils.addValueToPropertyList(property, finalHeaderToLine, columnToRead, line, propertiesValue, dictionary);
             });
         }
 
-        Utils.addNullFields(propertiesValue, nullsField);
+        MappingUtils.addNullFields(propertiesValue, nullsField);
 
         return propertiesValue;
     }
@@ -715,7 +717,7 @@ public class TransformerService {
             if (startObj == null) {
                 continue;
             }
-            String updatedEnd = Utils.addMinutesToTimestamp(startObj.toString(), sliceMinutes);
+            String updatedEnd = TimeUtils.addMinutesToTimestamp(startObj.toString(), sliceMinutes);
             if (updatedEnd != null) {
                 period.put("end_ts", updatedEnd);
             }
@@ -729,12 +731,12 @@ public class TransformerService {
     private void writeJsonFile(ResultUrbanDataset urbanDataset, ExtractionDto extractionDto, String inputFilePath, String fileName) throws IOException {
         // Determine the UTC offset for the target UD. Fallback to UTC if none provided.
         String udOffsetStr = extractionDto.getUdUtc() != null && !extractionDto.getUdUtc().isBlank() ? extractionDto.getUdUtc() : "0";
-        ZoneOffset udOffset = Utils.parseUtcOffset(udOffsetStr);
+        ZoneOffset udOffset = TimeUtils.parseUtcOffset(udOffsetStr);
 
         // Build a base timestamp for the context and file names using the target offset.
         java.time.Instant nowInstant = java.time.Instant.now();
         // Context timestamp must follow pattern yyyyMMddHHmmss (AAAAMMGGHHMMSS)
-        String contextTimestamp = Utils.formatAaaaMmGgHhMmSs(nowInstant, udOffset);
+        String contextTimestamp = TimeUtils.formatAaaaMmGgHhMmSs(nowInstant, udOffset);
 
         // Set context timeZone and timestamp on the UD context
         if (urbanDataset != null && urbanDataset.getUrbanDataset() != null
@@ -804,13 +806,13 @@ public class TransformerService {
             }
             String newFilePath = extractionDto.getOutputFilesPath() + "/" + outName;
             log.debug("Transformer Service: writing part {}/{} to {}", part, parts, newFilePath);
-            Utils.createFile(newFilePath, partResult, objectMapper);
+            FileUtils.createFile(newFilePath, partResult, objectMapper);
             startIndex = endIndex;
         }
         // Move the processed CSV to the completed folder only once
         String completedPath = extractionDto.getSourceFilesPath() + COMPLETED_PATH + fileName;
         log.debug("Transformer Service: moving source file to {}", completedPath);
-        Utils.moveFile(inputFilePath, completedPath);
+        FileUtils.moveFile(inputFilePath, completedPath);
         log.debug("Transformer Service: completed processing for {}", fileName);
     }
 

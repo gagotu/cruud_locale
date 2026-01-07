@@ -8,7 +8,8 @@ import com.exprivia.nest.cruud.dto.urbandataset.specification.SpecificationDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.PropertyValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ResultValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ValuesDto;
-import com.exprivia.nest.cruud.utils.Utils;
+import com.exprivia.nest.cruud.utils.FileUtils;
+import com.exprivia.nest.cruud.utils.MappingUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -80,7 +81,7 @@ public class ExternalService {
                 throw new RuntimeException(e);
             }
 
-            Utils.updateSpecificationAndContext(specificationDto, contextDto, extractionDto);
+            MappingUtils.updateSpecificationAndContext(specificationDto, contextDto, extractionDto);
 
             UrbanDatasetDto urbanDataset = UrbanDatasetDto.builder()
                     .specification(specificationDto)
@@ -98,7 +99,7 @@ public class ExternalService {
             // End values UD
 
             try {
-                Utils.createFile(tempFolder + "json_example.json", resultUrbanDataset, objectMapper);
+                FileUtils.createFile(tempFolder + "json_example.json", resultUrbanDataset, objectMapper);
             } catch (IOException e) {
                 log.error("Error during creation of JSON file result");
                 throw new RuntimeException(e);
@@ -130,7 +131,7 @@ public class ExternalService {
                         .val(dynamicValueDto.getAttributes().get(key).toString()).build());
             }
 
-            Utils.addNullFields(properties, Utils.toStringMap(
+            MappingUtils.addNullFields(properties, MappingUtils.toStringMap(
                     propertyDto.getConfigurations() != null ? propertyDto.getConfigurations().get("nullsField") : null
             ));
 

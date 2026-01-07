@@ -4,7 +4,7 @@ import com.exprivia.nest.cruud.dto.ExtractionDto;
 import com.exprivia.nest.cruud.service.ExternalService;
 import com.exprivia.nest.cruud.service.ExtractionService;
 import com.exprivia.nest.cruud.service.TransformerService;
-import com.exprivia.nest.cruud.utils.Utils;
+import com.exprivia.nest.cruud.utils.FileUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -58,7 +58,7 @@ public class RabbitHandler {
                 try {
                     SimpleDateFormat formatter = new SimpleDateFormat("ddMMyyyy");
                     String formattedDate = formatter.format(new Date());
-                    Utils.createFile(object.getPropertyName() + "_" + formattedDate + "_" + UUID.randomUUID(), resultUrbanDataset, objectMapper);
+                    FileUtils.createFile(object.getPropertyName() + "_" + formattedDate + "_" + UUID.randomUUID(), resultUrbanDataset, objectMapper);
                 } catch (IOException e) {
                     log.error("Errore durante la creazione del file JSON!", e);
                     throw new RuntimeException(e);
@@ -84,7 +84,7 @@ public class RabbitHandler {
 
         pathToClean.forEach(path -> {
             log.info("execute event clean for completed folder into: {}", path);
-            Utils.cleanFilesCompleted(path + "/completed/");
+            FileUtils.cleanFilesCompleted(path + "/completed/");
         });
     }
 

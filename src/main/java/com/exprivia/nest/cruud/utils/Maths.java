@@ -18,21 +18,21 @@ public class Maths {
 
         if (function.equalsIgnoreCase("num")) {
 
-            return Utils.getNumberOrNullString(value, alternativeValue);
+            return MappingUtils.getNumberOrNullString(value, alternativeValue);
 
         } else if (function.charAt(0) == '>') {
 
-            return Utils.getPositiveOrNullString(value, alternativeValue);
+            return MappingUtils.getPositiveOrNullString(value, alternativeValue);
 
         } else {
 
-            String normalized = Utils.normalizeDecimalSeparator(value);
+            String normalized = MappingUtils.normalizeDecimalSeparator(value);
 
             if (!Pattern.matches("-?\\d+(\\.\\d+)?", normalized))
                 return value;
 
             BigDecimal a = new BigDecimal(normalized);
-            BigDecimal b = new BigDecimal(Utils.normalizeDecimalSeparator(function.substring(1)));
+            BigDecimal b = new BigDecimal(MappingUtils.normalizeDecimalSeparator(function.substring(1)));
 
             switch (function.charAt(0)) {
                 case '+':
