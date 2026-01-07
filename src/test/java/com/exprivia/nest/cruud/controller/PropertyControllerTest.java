@@ -2,9 +2,9 @@ package com.exprivia.nest.cruud.controller;
 
 import com.exprivia.nest.cruud.dto.PropertyDto;
 import com.exprivia.nest.cruud.dto.PropertyFilterDto;
+import com.exprivia.nest.cruud.exception.DuplicateNameException;
+import com.exprivia.nest.cruud.exception.handler.GlobalExceptionHandler;
 import com.exprivia.nest.cruud.mapper.PropertyMapperImpl;
-import com.exprivia.nest.cruud.model.Property;
-import com.exprivia.nest.cruud.repository.PropertyRepository;
 import com.exprivia.nest.cruud.service.PropertyService;
 import com.exprivia.nest.cruud.utils.Endpoints;
 import com.exprivia.nest.cruud.utils.PropertyBaseTest;
@@ -34,9 +34,6 @@ public class PropertyControllerTest extends PropertyBaseTest {
     @MockitoBean
     private PropertyService propertyService;
 
-    @MockitoBean
-    private PropertyRepository propertyRepository;
-
     @Autowired
     private PropertyController propertyController;
 
@@ -47,12 +44,14 @@ public class PropertyControllerTest extends PropertyBaseTest {
      */
     @BeforeEach
     public void setUpControllerTest() {
-        mockMvc = MockMvcBuilders.standaloneSetup(propertyController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(propertyController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
     void testCreateProperty() throws Exception {
-        Mockito.when(propertyRepository.save(Mockito.any(Property.class))).thenReturn(propertyMapper.dtoToModel(propertyDto));
+        Mockito.when(propertyService.create(Mockito.any(PropertyDto.class))).thenReturn(propertyDto);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .post(Endpoints.PROPERTY)
@@ -68,7 +67,7 @@ public class PropertyControllerTest extends PropertyBaseTest {
         List<PropertyDto> properties = new ArrayList<>();
         properties.add(propertyDto);
 
-        Mockito.when(propertyRepository.findAll()).thenReturn(properties.stream().map(propertyMapper::dtoToModel).toList());
+        Mockito.when(propertyService.getAll()).thenReturn(properties);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .get(Endpoints.PROPERTY + Endpoints.ALL))
@@ -77,7 +76,7 @@ public class PropertyControllerTest extends PropertyBaseTest {
 
     @Test
     void testGetById() throws Exception {
-        Mockito.when(propertyRepository.findById(Mockito.anyString())).thenReturn(Optional.ofNullable(propertyMapper.dtoToModel(propertyDto)));
+        Mockito.when(propertyService.getById(Mockito.anyString())).thenReturn(Optional.of(propertyDto));
 
         mockMvc.perform(MockMvcRequestBuilders
                 .get(Endpoints.PROPERTY + Endpoints.SLASH + "{id}", "id")
@@ -87,7 +86,7 @@ public class PropertyControllerTest extends PropertyBaseTest {
 
     @Test
     void testRemove() throws Exception {
-        Mockito.doNothing().when(propertyRepository).deleteById(Mockito.anyString());
+        Mockito.doNothing().when(propertyService).remove(Mockito.anyString());
 
         mockMvc.perform(MockMvcRequestBuilders
                 .delete(Endpoints.PROPERTY + Endpoints.DELETE + Endpoints.SLASH + "id", "id")
@@ -102,7 +101,7 @@ public class PropertyControllerTest extends PropertyBaseTest {
 
         PropertyFilterDto propertyFilterDto = PropertyFilterDto.builder().ids(List.of(ID)).build();
 
-        Mockito.when(propertyRepository.getFilteredProperties(Mockito.any(PropertyFilterDto.class))).thenReturn(properties.stream().map(propertyMapper::dtoToModel).toList());
+        Mockito.when(propertyService.getFilteredProperties(Mockito.any(PropertyFilterDto.class))).thenReturn(properties);
 
         mockMvc.perform(MockMvcRequestBuilders
                         .post(Endpoints.PROPERTY + Endpoints.FILTER)
@@ -111,6 +110,29 @@ public class PropertyControllerTest extends PropertyBaseTest {
                         .accept(MediaType.APPLICATION_JSON)
                         .characterEncoding("utf-8"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void testGetByIdNotFound() throws Exception {
+        Mockito.when(propertyService.getById(Mockito.anyString())).thenReturn(Optional.empty());
+
+        mockMvc.perform(MockMvcRequestBuilders
+                        .get(Endpoints.PROPERTY + Endpoints.SLASH + "{id}", "missing"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void testCreateDuplicateNameReturnsConflict() throws Exception {
+        Mockito.when(propertyService.create(Mockito.any(PropertyDto.class)))
+                .thenThrow(new DuplicateNameException("duplicate"));
+
+        mockMvc.perform(MockMvcRequestBuilders
+                        .post(Endpoints.PROPERTY)
+                        .content(TestUtils.asJsonString(propertyDto))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .characterEncoding("utf-8"))
+                .andExpect(status().isConflict());
     }
 
 }

@@ -10,7 +10,6 @@ import com.exprivia.nest.cruud.dto.urbandataset.values.ResultValueDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.ValuesDto;
 import com.exprivia.nest.cruud.utils.FileUtils;
 import com.exprivia.nest.cruud.utils.MappingUtils;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +58,12 @@ public class ExternalService {
 
             PropertyFilterDto propertyFilterDto = PropertyFilterDto.builder().propertiesName(List.of(extractionDto.getPropertyName())).build();
 
-            PropertyDto propertyDto = propertyService.getFilteredProperties(propertyFilterDto).getFirst();
+            List<PropertyDto> properties = propertyService.getFilteredProperties(propertyFilterDto);
+            if (properties.isEmpty()) {
+                log.error("Property not found for name {}", extractionDto.getPropertyName());
+                return null;
+            }
+            PropertyDto propertyDto = properties.getFirst();
 
             ResultUrbanDataset resultUrbanDataset = null;
 
@@ -69,14 +73,9 @@ public class ExternalService {
             ContextDto contextDto;
 
             try {
-                specificationDto = objectMapper.readValue(
-                        objectMapper.writeValueAsString(propertyDto.getSpecification()), SpecificationDto.class
-                );
-
-                contextDto = objectMapper.readValue(
-                        objectMapper.writeValueAsString(propertyDto.getContext()), ContextDto.class
-                );
-            } catch (JsonProcessingException e) {
+                specificationDto = objectMapper.convertValue(propertyDto.getSpecification(), SpecificationDto.class);
+                contextDto = objectMapper.convertValue(propertyDto.getContext(), ContextDto.class);
+            } catch (IllegalArgumentException e) {
                 log.error("Error during retrieve and set specification/context for Urban Dataset");
                 throw new RuntimeException(e);
             }

@@ -1,9 +1,8 @@
 package com.exprivia.nest.cruud.controller;
 
 import com.exprivia.nest.cruud.dto.ExtractionDto;
+import com.exprivia.nest.cruud.exception.handler.GlobalExceptionHandler;
 import com.exprivia.nest.cruud.mapper.ExtractionMapperImpl;
-import com.exprivia.nest.cruud.model.Extraction;
-import com.exprivia.nest.cruud.repository.ExtractionRepository;
 import com.exprivia.nest.cruud.service.ExtractionService;
 import com.exprivia.nest.cruud.utils.Endpoints;
 import com.exprivia.nest.cruud.utils.ExtractionBaseTest;
@@ -37,9 +36,6 @@ public class ExtractionControllerTest extends ExtractionBaseTest {
     @MockitoBean
     private ExtractionService extractionService;
 
-    @MockitoBean
-    private ExtractionRepository extractionRepository;
-
     @Autowired
     private ExtractionController extractionController;
 
@@ -47,12 +43,14 @@ public class ExtractionControllerTest extends ExtractionBaseTest {
 
     @BeforeEach
     public void setUpExtractionTest() {
-        mockMvc = MockMvcBuilders.standaloneSetup(extractionController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(extractionController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
     void testCreateExtraction() throws Exception {
-        Mockito.when(extractionRepository.save(Mockito.any(Extraction.class))).thenReturn(extractionMapper.dtoToModel(extractionDto));
+        Mockito.when(extractionService.create(Mockito.any(ExtractionDto.class))).thenReturn(extractionDto);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .post(Endpoints.EXTRACTION)
@@ -68,7 +66,7 @@ public class ExtractionControllerTest extends ExtractionBaseTest {
         List<ExtractionDto> extractions = new ArrayList<>();
         extractions.add(extractionDto);
 
-        Mockito.when(extractionRepository.findAll()).thenReturn(extractions.stream().map(extractionMapper::dtoToModel).toList());
+        Mockito.when(extractionService.getAll()).thenReturn(extractions);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .get(Endpoints.EXTRACTION + Endpoints.ALL))
@@ -77,7 +75,7 @@ public class ExtractionControllerTest extends ExtractionBaseTest {
 
     @Test
     void testGetById() throws Exception {
-        Mockito.when(extractionRepository.findById(Mockito.anyString())).thenReturn(Optional.ofNullable(extractionMapper.dtoToModel(extractionDto)));
+        Mockito.when(extractionService.getById(Mockito.anyString())).thenReturn(Optional.of(extractionDto));
 
         mockMvc.perform(MockMvcRequestBuilders
                 .get(Endpoints.EXTRACTION + Endpoints.SLASH + "{id}", "id")
@@ -87,12 +85,30 @@ public class ExtractionControllerTest extends ExtractionBaseTest {
 
     @Test
     void testRemove() throws Exception {
-        Mockito.doNothing().when(extractionRepository).deleteById(Mockito.anyString());
+        Mockito.doNothing().when(extractionService).remove(Mockito.anyString());
 
         mockMvc.perform(MockMvcRequestBuilders
                 .delete(Endpoints.EXTRACTION + Endpoints.DELETE + Endpoints.SLASH + "id", "id")
                 .param("id", extractionDto.getId()))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void testGetByIdNotFound() throws Exception {
+        Mockito.when(extractionService.getById(Mockito.anyString())).thenReturn(Optional.empty());
+
+        mockMvc.perform(MockMvcRequestBuilders
+                        .get(Endpoints.EXTRACTION + Endpoints.SLASH + "{id}", "missing"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void testGetByExtractionNameNotFound() throws Exception {
+        Mockito.when(extractionService.getByExtractionName(Mockito.anyString())).thenReturn(Optional.empty());
+
+        mockMvc.perform(MockMvcRequestBuilders
+                        .get(Endpoints.EXTRACTION + Endpoints.NAME + Endpoints.SLASH + "{extractionName}", "missing"))
+                .andExpect(status().isNotFound());
     }
 
 }

@@ -3,14 +3,15 @@ package com.exprivia.nest.cruud.controller;
 import com.exprivia.nest.cruud.dto.PropertyDto;
 import com.exprivia.nest.cruud.dto.PropertyFilterDto;
 import com.exprivia.nest.cruud.exception.DuplicateNameException;
+import com.exprivia.nest.cruud.exception.NotFoundException;
 import com.exprivia.nest.cruud.service.PropertyService;
 import com.exprivia.nest.cruud.utils.Endpoints;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Espone le API REST per gestire le proprietà (mapping UD) usate durante le conversioni.
@@ -39,9 +40,11 @@ public class PropertyController {
 
     /** Restituisce una property cercandola per id. */
     @GetMapping(Endpoints.SLASH + "{id}")
-    public Optional<PropertyDto> getById(@PathVariable String id) {
+    public ResponseEntity<PropertyDto> getById(@PathVariable String id) {
         log.debug("Property Controller: getById -> {}", id);
-        return propertyService.getById(id);
+        return propertyService.getById(id)
+                .map(ResponseEntity::ok)
+                .orElseThrow(() -> new NotFoundException("Property not found for id " + id));
     }
 
     /** Cancella una property per id. */

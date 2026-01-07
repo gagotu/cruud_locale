@@ -13,7 +13,6 @@ import com.exprivia.nest.cruud.dto.urbandataset.values.ValuesDto;
 import com.exprivia.nest.cruud.utils.FileUtils;
 import com.exprivia.nest.cruud.utils.MappingUtils;
 import com.exprivia.nest.cruud.utils.TimeUtils;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.opencsv.*;
@@ -142,6 +141,12 @@ public class TransformerService {
             return ResultUrbanDataset.builder().build();
         }
 
+        Optional<ExtractionDto> extractionDto = extractionService.getByExtractionName(extractionName);
+        if (extractionDto.isEmpty()) {
+            log.warn("Extraction with name '{}' not found for upload conversion", extractionName);
+            return ResultUrbanDataset.builder().build();
+        }
+
         ResultUrbanDataset resultUrbanDataset;
 
         // Ottengo il nome del file originale
@@ -160,8 +165,6 @@ public class TransformerService {
             }
 
             Files.write(tempFile, fileBytes);
-
-            Optional<ExtractionDto> extractionDto = extractionService.getByExtractionName(extractionName);
 
             resultUrbanDataset = convertCsvToUrbanDataset(extractionDto.get(), tempFile.toString());
 
@@ -195,14 +198,9 @@ public class TransformerService {
         ContextDto contextDto;
 
         try {
-            specificationDto = objectMapper.readValue(
-                    objectMapper.writeValueAsString(propertyDto.getSpecification()), SpecificationDto.class
-            );
-
-            contextDto = objectMapper.readValue(
-                    objectMapper.writeValueAsString(propertyDto.getContext()), ContextDto.class
-            );
-        } catch (JsonProcessingException e) {
+            specificationDto = objectMapper.convertValue(propertyDto.getSpecification(), SpecificationDto.class);
+            contextDto = objectMapper.convertValue(propertyDto.getContext(), ContextDto.class);
+        } catch (IllegalArgumentException e) {
             log.error("Error during retrieve and set specification/context for Urban Dataset");
             throw new RuntimeException(e);
         }
@@ -251,134 +249,179 @@ public class TransformerService {
     }
 
     // From this method, we can retrieve data from CSV file
-    @SuppressWarnings("unchecked")
     private List<ResultValueDto> retrieveValueFromCsv(ExtractionDto retrievePropertyFilterDto, PropertyDto propertyDto, String inputFilePath) throws IOException, CsvValidationException {
 
         List<ResultValueDto> values = new ArrayList<>(); // initialize result values
 
-        FileReader fileReader = new FileReader(inputFilePath);
+        char separator = resolveSeparator(retrievePropertyFilterDto);
+        try (FileReader fileReader = new FileReader(inputFilePath);
+             CSVReader reader = new CSVReaderBuilder(fileReader)
+                     .withCSVParser(new CSVParserBuilder().withSeparator(separator).build())
+                     .build()) {
 
-        CSVReader reader = new CSVReaderBuilder(fileReader)
-                .withCSVParser(new CSVParserBuilder().withSeparator(retrievePropertyFilterDto.getSeparator()).build())
-                .build();
+            String[] line;
 
-        String[] line;
-
-        String[] header = reader.readNext();
-
-        String[] originalHeader = Arrays.copyOf(header, header.length);
-
-        HashMap<String, LinkedList<Integer>> finalHeaderToLine = new HashMap<>();
-
-        convertedHeaderFromMappings(originalHeader, propertyDto.getMappings(), finalHeaderToLine); //done converted header
-
-        SpecificationDto specificationDto = objectMapper.readValue(
-                objectMapper.writeValueAsString(propertyDto.getSpecification()), SpecificationDto.class
-        );
-
-        List<String> propertiesWithoutSubs = new ArrayList<>(specificationDto.getProperties().getPropertyDefinition().stream()
-                .filter(prp -> prp.getSubProperties() == null)
-                .map(PropertiesDto::getPropertyName)
-                .toList());
-
-        List<String> subProperties = specificationDto.getProperties().getPropertyDefinition().stream()
-                .filter(prp -> prp.getSubProperties() != null)
-                .flatMap(prp -> prp.getSubProperties().getPropertyName().stream())
-                .toList();
-
-        propertiesWithoutSubs.removeAll(subProperties);
-
-        Map<String, Object> configurations = propertyDto.getConfigurations() != null
-                ? propertyDto.getConfigurations()
-                : new HashMap<>();
-
-        List<String> periods = (List<String>) configurations.get("period");
-        List<Integer> columnsPeriods = retrieveColumnsNumberForHeader(periods, originalHeader);
-        int slice = (int) configurations.getOrDefault("slice", -1);
-        boolean slotMode = Boolean.TRUE.equals(retrievePropertyFilterDto.getFasce());
-
-        int dateColumn = -1;
-        if (configurations.containsKey("date")) {
-            dateColumn = retrieveColumnsNumberForHeader(List.of(configurations.get("date").toString()), originalHeader).getFirst();
-        }
-
-        Map<String, String> nullsFieldMap = MappingUtils.toStringMap(configurations.get("nullsField"));
-
-        int id = 1;
-        HashMap<String, Object> period;
-
-        if (slotMode && !columnsPeriods.isEmpty() && dateColumn >= 0) {
-            List<String[]> allLines = new ArrayList<>();
-            while ((line = reader.readNext()) != null) {
-                allLines.add(line);
+            String[] header = reader.readNext();
+            if (header == null || header.length == 0) {
+                log.warn("CSV header missing for file {}", inputFilePath);
+                return values;
             }
-            LinkedHashMap<String, List<String[]>> rowsByDate = new LinkedHashMap<>();
-            for (String[] l : allLines) {
-                if (l.length <= dateColumn || l[dateColumn] == null || l[dateColumn].isBlank()) {
-                    continue;
-                }
-                rowsByDate.computeIfAbsent(l[dateColumn], k -> new ArrayList<>()).add(l);
+
+            String[] originalHeader = Arrays.copyOf(header, header.length);
+
+            HashMap<String, LinkedList<Integer>> finalHeaderToLine = new HashMap<>();
+
+            if (propertyDto.getMappings() == null || propertyDto.getMappings().isEmpty()) {
+                log.warn("No mappings configured for property {}", propertyDto.getName());
+                return values;
             }
-            for (Map.Entry<String, List<String[]>> entry : rowsByDate.entrySet()) {
-                List<String[]> dayLines = entry.getValue();
-                if (dayLines.size() > 2) {
-                    log.warn("Found more than two rows for date {} in slot mode: keeping first two, discarding {}", entry.getKey(), dayLines.size() - 2);
-                    dayLines = dayLines.subList(0, 2);
+
+            convertedHeaderFromMappings(originalHeader, propertyDto.getMappings(), finalHeaderToLine); //done converted header
+            List<ValueDto> dictionary = propertyDto.getMappings().values().stream().toList();
+
+            SpecificationDto specificationDto;
+            try {
+                specificationDto = objectMapper.convertValue(propertyDto.getSpecification(), SpecificationDto.class);
+            } catch (IllegalArgumentException e) {
+                log.error("Error during retrieve and set specification for Urban Dataset");
+                throw new IOException(e);
+            }
+
+            List<String> propertiesWithoutSubs = new ArrayList<>(specificationDto.getProperties().getPropertyDefinition().stream()
+                    .filter(prp -> prp.getSubProperties() == null)
+                    .map(PropertiesDto::getPropertyName)
+                    .toList());
+
+            List<String> subProperties = specificationDto.getProperties().getPropertyDefinition().stream()
+                    .filter(prp -> prp.getSubProperties() != null)
+                    .flatMap(prp -> prp.getSubProperties().getPropertyName().stream())
+                    .toList();
+
+            propertiesWithoutSubs.removeAll(subProperties);
+
+            Map<String, Object> configurations = propertyDto.getConfigurations() != null
+                    ? propertyDto.getConfigurations()
+                    : new HashMap<>();
+
+            List<String> periods = normalizePeriodConfig(configurations.get("period"));
+            List<Integer> columnsPeriods = retrieveColumnsNumberForHeader(periods, originalHeader);
+            int slice = resolveSliceFromConfig(configurations.get("slice"));
+            boolean slotMode = Boolean.TRUE.equals(retrievePropertyFilterDto.getFasce());
+
+            int dateColumn = -1;
+            Object dateConfig = configurations.get("date");
+            if (dateConfig != null) {
+                List<Integer> dateColumns = retrieveColumnsNumberForHeader(List.of(dateConfig.toString()), originalHeader);
+                if (!dateColumns.isEmpty()) {
+                    dateColumn = dateColumns.getFirst();
+                } else {
+                    log.warn("Date column '{}' not found in header", dateConfig);
                 }
-                String[] firstLine = dayLines.get(0);
-                String[] secondLine = dayLines.size() > 1 ? dayLines.get(1) : null;
-                for (int i = 0; i < columnsPeriods.size(); i++) {
-                    int colIdx = columnsPeriods.get(i);
-                    if (colIdx < 0) {
+            }
+
+            Map<String, String> nullsFieldMap = MappingUtils.toStringMap(configurations.get("nullsField"));
+
+            int id = 1;
+            HashMap<String, Object> period;
+
+            if (slotMode && columnsPeriods.isEmpty()) {
+                log.warn("Slot mode enabled but no period columns found; falling back to standard processing");
+                slotMode = false;
+            }
+            if (slotMode && dateColumn < 0) {
+                log.warn("Slot mode enabled but date column missing; skipping conversion");
+                return values;
+            }
+            if (!slotMode && !columnsPeriods.isEmpty() && dateColumn < 0) {
+                log.warn("Period columns configured but date column missing; skipping conversion");
+                return values;
+            }
+
+            if (slotMode && !columnsPeriods.isEmpty() && dateColumn >= 0) {
+                LinkedHashMap<String, List<String[]>> rowsByDate = new LinkedHashMap<>();
+                Map<String, Integer> rowCountByDate = new HashMap<>();
+                while ((line = reader.readNext()) != null) {
+                    if (line.length <= dateColumn || line[dateColumn] == null || line[dateColumn].isBlank()) {
                         continue;
                     }
-                    String periodHeader = originalHeader[colIdx];
-                    String v1 = colIdx < firstLine.length ? firstLine[colIdx] : null;
-                    String v2 = secondLine != null && colIdx < secondLine.length ? secondLine[colIdx] : null;
-                    boolean v1Has = hasNonZeroValue(v1);
-                    boolean v2Has = hasNonZeroValue(v2);
-
-                    if (v1Has && v2Has) {
-                        id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
-                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
-                                values, propertyDto, subProperties, id);
-                        id = appendSlotRecord(secondLine, firstLine[dateColumn], periodHeader, colIdx, slice,
-                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
-                                values, propertyDto, subProperties, id);
-                    } else if (v1Has || v2Has) {
-                        String[] src = v1Has ? firstLine : secondLine;
-                        id = appendSlotRecord(src, firstLine[dateColumn], periodHeader, colIdx, slice,
-                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
-                                values, propertyDto, subProperties, id);
-                    } else {
-                        // entrambi null/zero: genero un solo record nullo
-                        id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
-                                propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap,
-                                values, propertyDto, subProperties, id);
+                    String dateValue = line[dateColumn];
+                    int count = rowCountByDate.merge(dateValue, 1, Integer::sum);
+                    if (count <= 2) {
+                        rowsByDate.computeIfAbsent(dateValue, k -> new ArrayList<>(2)).add(line);
                     }
                 }
-            }
-        } else {
-            while ((line = reader.readNext()) != null) {
-                if (!columnsPeriods.isEmpty()) {
-                    for (int i=0; i<columnsPeriods.size(); i++) {
+                for (Map.Entry<String, List<String[]>> entry : rowsByDate.entrySet()) {
+                    List<String[]> dayLines = entry.getValue();
+                    int totalForDate = rowCountByDate.getOrDefault(entry.getKey(), dayLines.size());
+                    if (totalForDate > 2) {
+                        log.warn("Found more than two rows for date {} in slot mode: keeping first two, discarding {}", entry.getKey(), totalForDate - 2);
+                    }
+                    String[] firstLine = dayLines.get(0);
+                    String[] secondLine = dayLines.size() > 1 ? dayLines.get(1) : null;
+                    for (int i = 0; i < columnsPeriods.size(); i++) {
+                        int colIdx = columnsPeriods.get(i);
+                        if (colIdx < 0) {
+                            continue;
+                        }
+                        String periodHeader = originalHeader[colIdx];
+                        String v1 = colIdx < firstLine.length ? firstLine[colIdx] : null;
+                        String v2 = secondLine != null && colIdx < secondLine.length ? secondLine[colIdx] : null;
+                        boolean v1Has = hasNonZeroValue(v1);
+                        boolean v2Has = hasNonZeroValue(v2);
 
-                        if (line[dateColumn] != null && !line[dateColumn].isBlank()) {
-                            //Effettua le operazioni solo se il datetime è valorizzato
+                        if (v1Has && v2Has) {
+                            id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                    propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap,
+                                    values, propertyDto, subProperties, id);
+                            id = appendSlotRecord(secondLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                    propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap,
+                                    values, propertyDto, subProperties, id);
+                        } else if (v1Has || v2Has) {
+                            String[] src = v1Has ? firstLine : secondLine;
+                            id = appendSlotRecord(src, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                    propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap,
+                                    values, propertyDto, subProperties, id);
+                        } else {
+                            // entrambi null/zero: genero un solo record nullo
+                            id = appendSlotRecord(firstLine, firstLine[dateColumn], periodHeader, colIdx, slice,
+                                    propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap,
+                                    values, propertyDto, subProperties, id);
+                        }
+                    }
+                }
+            } else {
+                while ((line = reader.readNext()) != null) {
+                    if (!columnsPeriods.isEmpty()) {
+                        for (int i = 0; i < columnsPeriods.size(); i++) {
+                            int periodIdx = columnsPeriods.get(i);
+                            if (periodIdx < 0 || periodIdx >= line.length) {
+                                log.warn("Skipping period column {} because line has only {} columns", periodIdx, line.length);
+                                continue;
+                            }
+                            if (dateColumn >= line.length) {
+                                log.warn("Skipping line because date column {} missing (line has {})", dateColumn, line.length);
+                                continue;
+                            }
+                            if (line[dateColumn] == null || line[dateColumn].isBlank()) {
+                                continue;
+                            }
+                            // Effettua le operazioni solo se il datetime è valorizzato
                             ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
 
-                            String periodHeader = originalHeader[columnsPeriods.get(i)];
-                            String periodValue = line[columnsPeriods.get(i)];
+                            String periodHeader = originalHeader[periodIdx];
+                            String periodValue = line[periodIdx];
                             period = TimeUtils.getStartAndEndTimeFromString(line[dateColumn], periodHeader, periodValue, slice);
 
-                            if (!period.isEmpty())
+                            if (!period.isEmpty()) {
                                 resultValueDto.setPeriod(period);
+                            }
 
                             int columnDataPeriod = -1;
-                            if (periods.size() > 1) // if there are more of 1 date column
+                            if (periods.size() > 1 && i < periods.size()) { // if there are more than 1 date column
                                 columnDataPeriod = retrieveColumnDataFromPeriod(periods.get(i), originalHeader);
+                            }
 
-                            resultValueDto.setProperty(processPropertiesValue(line, columnDataPeriod, propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
+                            resultValueDto.setProperty(processPropertiesValue(line, columnDataPeriod, propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap));
 
                             if (elaborateCoordinates(subProperties)) {
                                 resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
@@ -386,27 +429,22 @@ public class TransformerService {
 
                             id = writeResultValueDto(propertyDto, resultValueDto, values, id);
                         }
+                    } else {
+                        ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
 
+                        List<Integer> columnsToRead = retrieveColumnsNumberForHeader(propertiesWithoutSubs, originalHeader);
+
+                        resultValueDto.setProperty(processPropertiesValue(line, columnsToRead.isEmpty() ? -1 : columnsToRead.getFirst(), propertiesWithoutSubs, dictionary, finalHeaderToLine, nullsFieldMap));
+
+                        if (elaborateCoordinates(subProperties)) {
+                            resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
+                        }
+
+                        id = writeResultValueDto(propertyDto, resultValueDto, values, id);
                     }
-                } else {
-                    ResultValueDto resultValueDto = ResultValueDto.builder().id(id).build();
-
-                    List<Integer> columnsToRead = retrieveColumnsNumberForHeader(propertiesWithoutSubs, originalHeader);
-
-                    resultValueDto.setProperty(processPropertiesValue(line, columnsToRead.isEmpty() ? -1 : columnsToRead.getFirst(), propertiesWithoutSubs, propertyDto.getMappings().values().stream().toList(), finalHeaderToLine, nullsFieldMap));
-
-                    if (elaborateCoordinates(subProperties)) {
-                        resultValueDto.setCoordinates(getCoordinatesFromLine(finalHeaderToLine, line));
-                    }
-
-                    id = writeResultValueDto(propertyDto, resultValueDto, values, id);
                 }
-
             }
         }
-
-        reader.close(); //close reader csv
-        fileReader.close(); //close file
 
         return values;
     }
@@ -426,7 +464,7 @@ public class TransformerService {
                                  List<ResultValueDto> values,
                                  PropertyDto propertyDto,
                                  List<String> subProperties,
-                                 int id) throws JsonProcessingException {
+                                 int id) {
         if (sourceLine == null) {
             return id;
         }
@@ -503,7 +541,7 @@ public class TransformerService {
         return coordinatesDto;
     }
 
-    private int writeResultValueDto(PropertyDto propertyDto, ResultValueDto resultValueDto, List<ResultValueDto> values, int id) throws JsonProcessingException {
+    private int writeResultValueDto(PropertyDto propertyDto, ResultValueDto resultValueDto, List<ResultValueDto> values, int id) {
         //TODO: Write coordinates only if there are into mappings
         /*if (propertyDto.getContext().containsKey("coordinates")) {
             CoordinatesDto coordinatesDto = objectMapper.readValue(objectMapper.writeValueAsString(propertyDto.getContext().get("coordinates")), CoordinatesDto.class);
@@ -664,12 +702,21 @@ public class TransformerService {
                     log.warn("Skipping column '{}' at index {} because line has only {} columns", key, value, originalLine.length);
                     return;
                 }
+                String rawValue = originalLine[value];
                 if (withoutNegativeHeader.contains(key)) {
-                    resultMap.put(key, originalLine[value]);
+                    resultMap.put(key, rawValue);
                 } else if (withNegativeHeader.contains(key)) {
-                    resultMap.put(key, originalLine[value].charAt(0) != '-' ? originalLine[value] : "null");
+                    if (rawValue != null && !rawValue.isEmpty() && rawValue.charAt(0) == '-') {
+                        resultMap.put(key, "null");
+                    } else {
+                        resultMap.put(key, rawValue);
+                    }
                 } else if (negativeHeader.contains(key)) {
-                    resultMap.put(key, originalLine[value].charAt(0) == '-' ? originalLine[value] : "null");
+                    if (rawValue != null && !rawValue.isEmpty() && rawValue.charAt(0) == '-') {
+                        resultMap.put(key, rawValue);
+                    } else {
+                        resultMap.put(key, "null");
+                    }
                 }
             });
         });
@@ -683,7 +730,8 @@ public class TransformerService {
                 .propertiesName(List.of(retrievePropertyDto.getPropertyName()))
                 .build();
 
-        return propertyService.getFilteredProperties(propertyFilterDto).getFirst();
+        List<PropertyDto> properties = propertyService.getFilteredProperties(propertyFilterDto);
+        return properties.isEmpty() ? null : properties.getFirst();
     }
 
     private int resolveSliceMinutes(PropertyDto propertyDto) {
@@ -722,6 +770,45 @@ public class TransformerService {
                 period.put("end_ts", updatedEnd);
             }
         }
+    }
+
+    private List<String> normalizePeriodConfig(Object raw) {
+        if (raw instanceof List<?> list) {
+            List<String> result = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null) {
+                    result.add(item.toString());
+                }
+            }
+            return result;
+        }
+        if (raw instanceof String str && !str.isBlank()) {
+            return List.of(str);
+        }
+        return List.of();
+    }
+
+    private int resolveSliceFromConfig(Object rawSlice) {
+        if (rawSlice instanceof Number number) {
+            return number.intValue();
+        }
+        if (rawSlice instanceof String str && !str.isBlank()) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException e) {
+                log.warn("Unable to parse slice configuration '{}'", str);
+            }
+        }
+        return -1;
+    }
+
+    private char resolveSeparator(ExtractionDto extractionDto) {
+        char separator = extractionDto.getSeparator();
+        if (separator == 0) {
+            log.warn("Separator not configured for extraction {}, defaulting to ','", extractionDto.getExtractionName());
+            return ',';
+        }
+        return separator;
     }
 
 
