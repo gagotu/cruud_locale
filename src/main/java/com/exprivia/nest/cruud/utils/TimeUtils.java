@@ -25,7 +25,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Time parsing and normalization helpers.
+ * Classe utility per parsing e normalizzazione dei timestamp usata nella pipeline di conversione.
+ * Questa classe gestisce:
+ * - composizione di periodi (start_ts/end_ts) a partire da colonne CSV (data + periodo)
+ * - parsing di timestamp con o senza offset
+ * - normalizzazione verso un offset di destinazione (UD)
+ * - gestione di gap/overlap dovuti al cambio DST
  */
 @Slf4j
 public final class TimeUtils {
@@ -37,15 +42,22 @@ public final class TimeUtils {
     }
 
     /**
-     * Build a start/end period string pair from the CSV date plus the period column.
-     * - If slice<0 we treat the header as an explicit range (HH:mm-HH:mm).
-     * - If slice==0 we keep the instant as-is (start=end) or expand a range header.
-     * - If slice>0 we treat the header as a slot index (eaN) and compute minutes.
+     * Costruisce una mappa periodo con chiavi start_ts/end_ts partendo da:
+     * - date: colonna data (puo contenere anche l'orario)
+     * - periodHeader: header della colonna periodo (es. "00:00-00:15" o "ea1")
+     * - periodValue: valore della colonna periodo (es. "01:15:00")
+     * - slice: durata slot in minuti (se >0); se <0 indica un range esplicito
+     *
+     * Regole principali:
+     * - slice < 0: il periodo e nel formato HH:mm-HH:mm nel header.
+     * - slice == 0: start=end; se header e un range lo usa direttamente.
+     * - slice > 0: il header contiene un indice (es. eaN) da cui derivare i minuti.
      */
     public static HashMap<String, Object> getStartAndEndTimeFromString(String date, String periodHeader, String periodValue, int slice) {
         HashMap<String, Object> period = new HashMap<>();
 
         if (slice < 0) {
+            // Caso "range esplicito": split HH:mm-HH:mm e usa i minuti
             String[] time = periodHeader.split("-");
             String timeEnd = time[1];
             time = time[0].split(":");
@@ -58,7 +70,7 @@ public final class TimeUtils {
             period.put("start_ts", convertMinutesInHoursString(date, minutesStart));
             period.put("end_ts", convertMinutesInHoursString(date, minutesEnd));
         } else if (slice == 0) {
-            // If header is a range like 00:00-00:15, derive start/end from it.
+            // Caso "instantaneo": se header contiene un range lo usa, altrimenti start=end
             if (periodHeader != null && periodHeader.contains("-") && periodHeader.contains(":")) {
                 String[] time = periodHeader.split("-");
                 if (time.length == 2) {
@@ -71,12 +83,14 @@ public final class TimeUtils {
                     return period;
                 }
             }
+            // Se date o periodValue contiene gia timestamp completo lo usa
             String candidate = mergeDateAndTimeColumns(date, periodValue);
             if (candidate != null && !candidate.isBlank()) {
                 period.put("start_ts", candidate);
                 period.put("end_ts", candidate);
             }
         } else {
+            // Caso "slot numerato": cerca il numero nell'header (es. ea1, ea2, ...)
             String regex = "\\d+";
             Pattern pattern = Pattern.compile(regex);
             Matcher matcher = pattern.matcher(periodHeader);
@@ -93,6 +107,7 @@ public final class TimeUtils {
             }
 
             if (!slotResolved) {
+                // Fallback: prova a comporre date + periodValue
                 String candidate = mergeDateAndTimeColumns(date, periodValue);
                 if (candidate != null && !candidate.isBlank()) {
                     period.put("start_ts", candidate);
@@ -106,12 +121,14 @@ public final class TimeUtils {
     }
 
     /**
-     * Merge date and period columns taking into account whichever already encodes a full timestamp.
+     * Unisce data e periodo considerando i casi in cui uno dei due
+     * contenga gia un timestamp completo (data+ora).
      */
     private static String mergeDateAndTimeColumns(String date, String periodValue) {
         String datePart = trimToNull(date);
         String periodPart = trimToNull(periodValue);
 
+        // Se uno dei due e gia completo, lo restituiamo come risultato
         if (isFullTimestamp(datePart)) {
             return datePart;
         }
@@ -128,6 +145,7 @@ public final class TimeUtils {
             return datePart;
         }
 
+        // Gestione di "T" appesa o prefissa
         String sanitizedDate = trimToNull(removeTrailingT(datePart));
         String sanitizedPeriod = trimToNull(removeLeadingT(periodPart));
         if (sanitizedDate == null && sanitizedPeriod == null) {
@@ -140,6 +158,7 @@ public final class TimeUtils {
             return sanitizedDate;
         }
 
+        // Sceglie il separatore coerente con la data originale
         String delimiter;
         if (sanitizedDate.contains("T")) {
             delimiter = "";
@@ -155,6 +174,7 @@ public final class TimeUtils {
         if (value == null || value.isBlank()) {
             return false;
         }
+        // Valuta la presenza di una data e di un componente orario
         return DATE_COMPONENT_PATTERN.matcher(value).find()
                 && TIME_COMPONENT_PATTERN.matcher(value).find();
     }
@@ -181,6 +201,7 @@ public final class TimeUtils {
         if (slice <= 0 || period == null) {
             return;
         }
+        // Se abbiamo uno start valido, forziamo l'end = start + slice minuti
         Object startObj = period.get("start_ts");
         String start = startObj != null ? startObj.toString() : null;
         if (start == null || start.isBlank()) {
@@ -197,13 +218,16 @@ public final class TimeUtils {
         if (trimmed == null || trimmed.isBlank()) {
             return null;
         }
+        // Conserva il numero di cifre di frazione (millis/nanos) se presenti
         int fractionDigits = detectFractionDigits(trimmed);
         try {
+            // Timestamp con offset esplicito (es. 2023-10-29T01:00:00+02:00)
             OffsetDateTime offset = OffsetDateTime.parse(trimmed);
             DateTimeFormatter formatter = buildFormatter(true, fractionDigits);
             return offset.plusMinutes(minutes).format(formatter);
         } catch (DateTimeParseException ignored) { }
         try {
+            // Timestamp locale senza offset
             LocalDateTime local = LocalDateTime.parse(trimmed);
             DateTimeFormatter formatter = buildFormatter(false, fractionDigits);
             return local.plusMinutes(minutes).format(formatter);
@@ -215,6 +239,7 @@ public final class TimeUtils {
         DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
                 .appendPattern("yyyy-MM-dd'T'HH:mm:ss");
         if (fractionDigits > 0) {
+            // Mantiene esattamente il numero di cifre frazionarie rilevate
             builder.appendFraction(ChronoField.NANO_OF_SECOND, fractionDigits, fractionDigits, true);
         }
         if (withOffset) {
@@ -257,9 +282,11 @@ public final class TimeUtils {
     private static String convertMinutesInHoursString(String date, int minutes) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(Objects.requireNonNull(getDateTimeFormatter(date)));
 
-        if (formatter.toString().contains("H")) { // If time is already specified, return it.
+        // Se la data include gia un componente orario, la restituiamo invariata
+        if (formatter.toString().contains("H")) {
             return LocalDateTime.parse(date, formatter).toString();
         } else {
+            // Altrimenti costruisce l'orario a partire dai minuti
             LocalDate localDate = LocalDate.parse(date, formatter);
             LocalDateTime dateTime = LocalDateTime.of(localDate, LocalTime.of(minutes / 60, minutes % 60));
             return dateTime.toString().concat(":00");
@@ -274,7 +301,7 @@ public final class TimeUtils {
 
         String sanitized = datetimeString.trim();
 
-        // First try date+time patterns.
+        // Prova prima con pattern data+ora
         List<String> dateTimePatterns = List.of(
                 "yyyy-MM-dd HH:mm:ss",
                 "dd/MM/yyyy HH:mm:ss",
@@ -293,7 +320,7 @@ public final class TimeUtils {
             } catch (DateTimeParseException ignored) { }
         }
 
-        // Then try date-only patterns.
+        // Poi con pattern solo data
         List<String> dateOnlyPatterns = List.of(
                 "yyyy-MM-dd",
                 "dd/MM/yyyy",
@@ -312,7 +339,8 @@ public final class TimeUtils {
     }
 
     /**
-     * Parse a string representing a UTC offset into a {@link ZoneOffset}.
+     * Converte una stringa di offset UTC in ZoneOffset.
+     * Esempi accettati: "UTC+1", "+01:30", "-2", "Z".
      */
     public static ZoneOffset parseUtcOffset(String utcString) {
         if (utcString == null || utcString.isBlank()) {
@@ -334,7 +362,7 @@ public final class TimeUtils {
         try {
             return ZoneOffset.of(cleaned);
         } catch (DateTimeException ignored) {
-            // fallthrough to manual parsing
+            // Fallback al parsing manuale
         }
         try {
             boolean negative = cleaned.startsWith("-");
@@ -359,7 +387,8 @@ public final class TimeUtils {
     }
 
     /**
-     * Adjust period values by converting timestamps from a source UTC offset to a target UTC offset.
+     * Converte tutti i periodi (start_ts/end_ts) da un offset sorgente a uno target.
+     * I timestamp sono interpretati come LocalDateTime nel fuso "utcCsv".
      */
     public static void adjustPeriods(List<ResultValueDto> values, String utcCsv, String utcUd) {
         if (values == null || values.isEmpty()) {
@@ -376,7 +405,7 @@ public final class TimeUtils {
             if (period == null) {
                 continue;
             }
-            // adjust start_ts
+            // start_ts
             Object startObj = period.get("start_ts");
             if (startObj instanceof String startStr && !startStr.isBlank()) {
                 try {
@@ -388,7 +417,7 @@ public final class TimeUtils {
                     log.error("Error adjusting start_ts {}: {}", startObj, e.getMessage());
                 }
             }
-            // adjust end_ts
+            // end_ts
             Object endObj = period.get("end_ts");
             if (endObj instanceof String endStr && !endStr.isBlank()) {
                 try {
@@ -404,7 +433,7 @@ public final class TimeUtils {
     }
 
     /**
-     * Parse a string representing an IANA time zone into a {@link ZoneId}.
+     * Converte una stringa IANA (es. "Europe/Rome") in ZoneId.
      */
     public static ZoneId parseZoneId(String timezone) {
         if (timezone == null || timezone.isBlank()) {
@@ -420,7 +449,7 @@ public final class TimeUtils {
     }
 
     /**
-     * Format an {@link Instant} into yyyyMMddHHmmss in the given target offset.
+     * Formatta un Instant nel formato yyyyMMddHHmmss nel fuso target.
      */
     public static String formatAaaaMmGgHhMmSs(Instant instant, ZoneOffset target) {
         if (instant == null) {
@@ -431,7 +460,9 @@ public final class TimeUtils {
     }
 
     /**
-     * Resolve a {@link java.time.ZonedDateTime} from a local date-time within a time zone.
+     * Risolve un LocalDateTime in ZonedDateTime applicando le regole del fuso.
+     * Se handle=false lascia la risoluzione standard (gap/overlap non gestiti).
+     * Se handle=true applica scelte deterministiche per overlap e gap.
      */
     public static java.time.ZonedDateTime resolveWithZoneRules(LocalDateTime ldt, ZoneId zone,
                                                                boolean handle, String overlapPolicy, String gapPolicy) {
@@ -445,6 +476,7 @@ public final class TimeUtils {
                 }
                 return ldt.atZone(zone);
             } else if (validOffsets.size() > 1) {
+                // Overlap: sceglie l'offset "piu tardo" per default
                 ZoneOffset preferred = validOffsets.get(validOffsets.size() - 1);
                 return java.time.ZonedDateTime.ofLocal(ldt, zone, preferred);
             } else {
@@ -452,12 +484,14 @@ public final class TimeUtils {
             }
         }
         if (validOffsets.isEmpty()) {
+            // Gap: sposta in avanti al primo istante valido
             ZoneOffsetTransition trans = rules.nextTransition(ldt.minusHours(2).atZone(zone).toInstant());
             if (trans != null) {
                 return trans.getDateTimeAfter().atZone(zone);
             }
             return ldt.atZone(zone);
         } else if (validOffsets.size() > 1) {
+            // Overlap: seleziona offset in base alla policy richiesta
             ZoneOffset preferred;
             if (overlapPolicy != null && overlapPolicy.equalsIgnoreCase("KEEP_EARLIER")) {
                 preferred = validOffsets.get(0).getTotalSeconds() <= validOffsets.get(1).getTotalSeconds()
@@ -473,7 +507,12 @@ public final class TimeUtils {
     }
 
     /**
-     * Normalize all period timestamps so they are expressed relative to a fixed UTC offset.
+     * Normalizza tutti i periodi verso un offset UD fisso.
+     * Strategia:
+     * 1) parse start/end con pattern noti
+     * 2) calcola transizioni DST per anno
+     * 3) applica correzioni "compress/expand" a partire dai confini DST
+     * 4) converte all'offset UD e riscrive le stringhe
      */
     public static void normalizePeriodsForUd(List<ResultValueDto> values, String startKey, String endKey,
                                              ZoneId csvZone, ZoneOffset udOffset, boolean handle,
@@ -529,6 +568,7 @@ public final class TimeUtils {
             transitionsMap.put(yr, tr);
         }
         java.util.Map<Integer, YearCorrectionState> stateMap = new java.util.HashMap<>();
+        // Seconda passata: applica correzioni e scrive i nuovi valori
         for (int idx = 0; idx < values.size(); idx++) {
             LocalDateTime startLdt = starts.get(idx);
             LocalDateTime endLdt = ends.get(idx);
@@ -539,11 +579,13 @@ public final class TimeUtils {
                 YearCorrectionState ys = stateMap.computeIfAbsent(year, y -> new YearCorrectionState());
                 DstTransitions tr = transitionsMap.get(year);
                 if (handle && tr != null) {
+                    // Dopo il salto in avanti: comprimi la linea temporale
                     if (!ys.springFixed && tr.springForwardLocal != null
                             && !startLdt.isBefore(tr.springForwardLocal)) {
                         ys.correctionMinutes -= 60;
                         ys.springFixed = true;
                     }
+                    // Durante l'overlap: applica l'espansione alla seconda occorrenza
                     if (!ys.autumnFixed && tr.autumnSecondPassLocal != null) {
                         if (ys.autumnState == 0 && !startLdt.isBefore(tr.autumnSecondPassLocal)) {
                             ys.autumnState = 1;
@@ -590,6 +632,11 @@ public final class TimeUtils {
         log.debug("Utils: normalizePeriodsForUd finish");
     }
 
+    /**
+     * Contiene i due punti di transizione rilevanti per un anno:
+     * - springForwardLocal: primo orario valido dopo il gap (salto avanti)
+     * - autumnSecondPassLocal: inizio della seconda occorrenza (overlap)
+     */
     private static final class DstTransitions {
         final LocalDateTime springForwardLocal;
         final LocalDateTime autumnSecondPassLocal;
@@ -606,6 +653,10 @@ public final class TimeUtils {
         int correctionMinutes = 0;
     }
 
+    /**
+     * Calcola le transizioni DST per un anno specifico.
+     * Scorre le transizioni della zona finche trova il primo gap e il primo overlap.
+     */
     private static DstTransitions computeDstTransitions(ZoneId zone, int year) {
         ZoneRules rules = zone.getRules();
         java.time.ZonedDateTime zStart = LocalDateTime.of(year, 1, 1, 0, 0).atZone(zone);
@@ -628,11 +679,13 @@ public final class TimeUtils {
                 break;
             }
             if (trans.isGap()) {
+                // Gap (primavera): memorizza il primo orario valido dopo il salto
                 if (springAfter == null && (transYearAfter == year || transYearBefore == year)) {
                     springAfter = dtAfter;
                     log.debug("Utils: spring transition for {} -> {}", year, springAfter);
                 }
             } else if (trans.isOverlap()) {
+                // Overlap (autunno): dtAfter e l'inizio della seconda occorrenza
                 if (autumnSecond == null && (transYearAfter == year || transYearBefore == year)) {
                     autumnSecond = dtAfter;
                     log.debug("Utils: autumn transition for {} -> {}", year, autumnSecond);
@@ -642,11 +695,15 @@ public final class TimeUtils {
                 log.debug("Utils: collected both transitions for {}, breaking", year);
                 break;
             }
+            // Avanza oltre la transizione corrente per evitare loop
             search = trans.getDateTimeAfter().plusSeconds(1).atZone(zone);
         }
         return new DstTransitions(springAfter, autumnSecond);
     }
 
+    /**
+     * Prova a fare parse con una lista di pattern; torna null se nessuno combacia.
+     */
     private static LocalDateTime parseLocalDateTime(String value, DateTimeFormatter[] patterns) {
         for (DateTimeFormatter formatter : patterns) {
             try {
