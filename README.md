@@ -1,44 +1,88 @@
 # CRUUD
 
-## Descrizione
-L’obiettivo del sistema software CRUUD (Cruise-UD Transformer) è quello di convertire in appositi file con 
-struttura Urban Dataset OWL (in seguito UD OWL), i diversi file csv/json “non strutturati” seguendo 
-determinati parametri di estrazione impostati dall’utente. 
+## Panoramica
+CRUUD (Cruise-UD Transformer) converte file CSV/JSON non strutturati in file Urban Dataset (UD) secondo mapping
+e configurazioni salvate a database. Gestisce conversioni manuali e automatiche tramite RabbitMQ.
 
+## Funzionalita principali
+- Conversione CSV/JSON in UrbanDataset.
+- Conversione automatica e cleaning schedulato (RabbitMQ).
+- Normalizzazione temporale con gestione DST e offset UD.
+- Chunking dei file UD (max righe configurabile).
 
-## Installazione ed esecuzione del progetto in ambiente locale
-#### Prerequisiti
-- [ ] Installazione di Docker
-- [ ] Linea di commandi, cmd/poweshell per sistema operativo Windows e Shell per sistemi operativi Linux
+## Architettura
+- Spring Boot 3.x
+- MongoDB (configurazioni di property ed extraction)
+- RabbitMQ (auto-convert / auto-clean)
+- Docker Compose per ambiente locale
 
+## Requisiti
+- Docker Desktop (Windows) o Docker Engine (Linux/macOS)
+- Java 21 (solo per build locale senza Docker)
+- Maven (solo per build locale senza Docker)
 
-#### Installazione
-- [ ] Installare Docker da [qui](https://www.docker.com/products/docker-desktop/).
+## Configurazione Docker Compose
+File `.env` in `docker/compose`:
+- `DB_*` / `RABBITMQ_*`: credenziali e host interni ai container.
+- `HOST_DOCUMENTS_DIR`: directory base sul host (impostata dagli script).
+- `MONGO_DATA_SUBDIR`, `APP_DATA_SUBDIR`: sottocartelle su host.
+- `MONGO_DATA_PATH`, `APP_DATA_PATH` (opzionali): override path completi.
 
+I volumi nel compose montano:
+- MongoDB -> `/data/db`
+- App -> `/data/app`
 
-#### Esecuzione
-Spostarsi nella cartella /docker/ ed eseguire il file:
+## Avvio con Docker (consigliato)
 
-  > build-image.bat
+### 1) Build immagine
+Windows:
+```powershell
+cd docker
+.\build-image.bat
+```
 
-successivamente entrare in /docker/compose/ e lanciare il comando:
+Linux/macOS:
+```bash
+cd docker
+./build-image.sh
+```
 
-  > docker-compose up -d
+### 2) Avvio stack
+Windows PowerShell:
+```powershell
+cd docker\compose
+.\compose-up.ps1
+```
 
-Se l'installazione finisce con successo sarà possibile ragiungere l'applicativo 
-da questo [link](http://localhost:8090).
+Linux/macOS:
+```bash
+cd docker/compose
+bash ./compose-up.sh
+```
 
-Per chiudere l'esecuzione dei container appena creati, lavorare dal docker manager oppure lanciare il comando:
+Gli script calcolano automaticamente la cartella Documenti e impostano `HOST_DOCUMENTS_DIR`.
 
-  > docker-compose stop
+### Stop e shutdown
+Windows PowerShell:
+```powershell
+.\compose-down.ps1
+```
 
-#### Comandi utili 
-> __*docker-compose up --build <service_name oppure vuoto>  --build --force-recreate --remove-orphans *__  - Commando per avviare Docker pulendo la cache per riflettere i cambiamenti in configurazione
->
-> __*docker-compose stop*__  - Commando per stoppare i container
-> 
-> __*docker-compose start*__  - Commando per riavviare i container
-> 
-> __*docker-compose down*__  - Commando per terminare Docker e rimuovere tutti i container creati
-> 
-> __*docker build --no-cache --progress=plain -t geco .\gecoregistration*__  - Commando per eseguire un specifico servizio visualizzando i log 
+Linux/macOS:
+```bash
+bash ./compose-down.sh
+```
+
+## Endpoint principali
+Base URL: `http://localhost:8090`
+
+- `POST /transformer/csv` -> conversione da cartella (payload ExtractionDto)
+- `GET /transformer/csv/{extractionName}` -> conversione da extractionName
+- `POST /transformer/upload/{property}` -> upload CSV
+- `POST /transformer/external/open-cruise/{extractionName}` -> JSON OpenCruise
+- `POST /property` / `GET /property/all` / `GET /property/{id}` / `POST /property/filter`
+- `POST /extraction` / `GET /extraction/all` / `GET /extraction/{id}` / `GET /extraction/name/{extractionName}`
+
+## Note
+- La build Docker usa `mvn -Pprod`, quindi il profilo attivo e `prod`.
+- Se vuoi usare un path diverso sul host, imposta `HOST_DOCUMENTS_DIR` o `APP_DATA_PATH` nel `.env`.

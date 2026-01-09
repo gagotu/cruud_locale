@@ -236,6 +236,7 @@ public class TransformerService {
             if (Boolean.TRUE.equals(extractionDto.getFasce())) {
                 values = adjustSlotDurationsAndSort(values);
             }
+            applyEndExclusiveFormatting(values);
             urbanDataset.setValues(ValuesDto.builder().line(values).build());
             log.debug("Transformer Service: building urban dataset with {} values", values != null ? values.size() : null);
             resultUrbanDataset = ResultUrbanDataset.builder().urbanDataset(urbanDataset).build();
@@ -772,6 +773,18 @@ public class TransformerService {
         }
     }
 
+    private void applyEndExclusiveFormatting(List<ResultValueDto> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        for (ResultValueDto value : values) {
+            if (value == null || value.getPeriod() == null) {
+                continue;
+            }
+            TimeUtils.adjustEndExclusive(value.getPeriod());
+        }
+    }
+
     private List<String> normalizePeriodConfig(Object raw) {
         if (raw instanceof List<?> list) {
             List<String> result = new ArrayList<>();
@@ -820,17 +833,18 @@ public class TransformerService {
         String udOffsetStr = extractionDto.getUdUtc() != null && !extractionDto.getUdUtc().isBlank() ? extractionDto.getUdUtc() : "0";
         ZoneOffset udOffset = TimeUtils.parseUtcOffset(udOffsetStr);
 
-        // Build a base timestamp for the context and file names using the target offset.
+        // Build timestamps for context (ISO) and file names (safe).
         java.time.Instant nowInstant = java.time.Instant.now();
-        // Context timestamp must follow pattern yyyyMMddHHmmss (AAAAMMGGHHMMSS)
-        String contextTimestamp = TimeUtils.formatAaaaMmGgHhMmSs(nowInstant, udOffset);
+        String contextTimestamp = TimeUtils.formatIsoLocalDateTime(nowInstant, udOffset);
+        String fileTimestamp = TimeUtils.formatAaaaMmGgHhMmSs(nowInstant, udOffset);
 
         // Set context timeZone and timestamp on the UD context
         if (urbanDataset != null && urbanDataset.getUrbanDataset() != null
                 && urbanDataset.getUrbanDataset().getContext() != null) {
             // Override the time zone with the extraction config if present
             if (extractionDto.getUdUtc() != null && !extractionDto.getUdUtc().isBlank()) {
-                urbanDataset.getUrbanDataset().getContext().setTimeZone(extractionDto.getUdUtc());
+                String label = TimeUtils.formatUtcOffsetLabel(extractionDto.getUdUtc());
+                urbanDataset.getUrbanDataset().getContext().setTimeZone(label != null ? label : extractionDto.getUdUtc());
             }
             urbanDataset.getUrbanDataset().getContext().setTimestamp(contextTimestamp);
         }
@@ -877,14 +891,19 @@ public class TransformerService {
             partUd.setContext(urbanDataset.getUrbanDataset().getContext());
             ValuesDto partValues = new ValuesDto();
             if (lines != null) {
-                partValues.setLine(lines.subList(startIndex, endIndex));
+                List<ResultValueDto> partLines = new ArrayList<>(lines.subList(startIndex, endIndex));
+                int newId = 1;
+                for (ResultValueDto value : partLines) {
+                    value.setId(newId++);
+                }
+                partValues.setLine(partLines);
             } else {
                 partValues.setLine(new ArrayList<>());
             }
             partUd.setValues(partValues);
             ResultUrbanDataset partResult = ResultUrbanDataset.builder().urbanDataset(partUd).build();
             // Compose file name: [resourceId]_-_[timestamp] + optional suffix
-            String baseName = "[" + safeResourceId + "]_-_[" + contextTimestamp + "]";
+            String baseName = "[" + safeResourceId + "]_-_[" + fileTimestamp + "]";
             String outName;
             if (parts > 1) {
                 outName = baseName + "_" + part + ".json";

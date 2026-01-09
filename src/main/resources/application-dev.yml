@@ -1,5 +1,5 @@
 # cartella temporanea (Windows): ok usare gli apici singoli per evitare di dover escaperare i backslash
-temp-folder: 'C:\Users\gaturturro\Documents\DockerVolumes\cruud\sourceCsv\temp\'
+temp-folder: '/data/app/source/temp/'
 
 spring:
   servlet:

@@ -235,6 +235,80 @@ public final class TimeUtils {
         return null;
     }
 
+    /**
+     * Sottrae 1 centesimo di secondo (10 ms) a un timestamp.
+     * Se il timestamp ha una frazione, la mantiene; altrimenti forza almeno 2 cifre.
+     */
+    public static String subtractCentisecondFromTimestamp(String timestamp) {
+        String trimmed = timestamp != null ? timestamp.trim() : null;
+        if (trimmed == null || trimmed.isBlank()) {
+            return null;
+        }
+        int fractionDigits = Math.max(2, detectFractionDigits(trimmed));
+        try {
+            OffsetDateTime offset = OffsetDateTime.parse(trimmed);
+            DateTimeFormatter formatter = buildFormatter(true, fractionDigits);
+            return offset.minusNanos(10_000_000).format(formatter);
+        } catch (DateTimeParseException ignored) { }
+        try {
+            LocalDateTime local = LocalDateTime.parse(trimmed);
+            DateTimeFormatter formatter = buildFormatter(false, fractionDigits);
+            return local.minusNanos(10_000_000).format(formatter);
+        } catch (DateTimeParseException ignored) { }
+        return null;
+    }
+
+    /**
+     * Rende esclusivo l'end_ts se diverso da start_ts, sottraendo 1 secondo.
+     * In ogni caso normalizza end_ts al formato senza millesimi.
+     */
+    public static void adjustEndExclusive(HashMap<String, Object> period) {
+        if (period == null) {
+            return;
+        }
+        Object startObj = period.get("start_ts");
+        Object endObj = period.get("end_ts");
+        if (startObj == null || endObj == null) {
+            return;
+        }
+        String start = startObj.toString();
+        String end = endObj.toString();
+        if (start.isBlank() || end.isBlank()) {
+            return;
+        }
+
+        LocalDateTime startLdt = parseToLocalDateTime(start);
+        LocalDateTime endLdt = parseToLocalDateTime(end);
+        if (endLdt == null) {
+            return;
+        }
+
+        if (startLdt != null) {
+            if (endLdt.isAfter(startLdt)) {
+                endLdt = endLdt.minusSeconds(1);
+            } else if (endLdt.isEqual(startLdt)) {
+                startLdt = startLdt.withNano(0);
+                period.put("start_ts", startLdt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                endLdt = startLdt;
+            }
+        }
+        endLdt = endLdt.withNano(0);
+        period.put("end_ts", endLdt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+    }
+
+    private static LocalDateTime parseToLocalDateTime(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(timestamp).toLocalDateTime();
+        } catch (DateTimeParseException ignored) { }
+        try {
+            return LocalDateTime.parse(timestamp);
+        } catch (DateTimeParseException ignored) { }
+        return null;
+    }
+
     private static DateTimeFormatter buildFormatter(boolean withOffset, int fractionDigits) {
         DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
                 .appendPattern("yyyy-MM-dd'T'HH:mm:ss");
@@ -457,6 +531,39 @@ public final class TimeUtils {
         }
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
         return OffsetDateTime.ofInstant(instant, target).format(formatter);
+    }
+
+    /**
+     * Formatta un Instant come LocalDateTime ISO (senza offset) nel fuso target.
+     */
+    public static String formatIsoLocalDateTime(Instant instant, ZoneOffset target) {
+        if (instant == null) {
+            return null;
+        }
+        return LocalDateTime.ofInstant(instant, target).withNano(0)
+                .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+
+    /**
+     * Normalizza un offset UTC in formato "UTC+/-n".
+     */
+    public static String formatUtcOffsetLabel(String utcString) {
+        if (utcString == null || utcString.isBlank()) {
+            return null;
+        }
+        String trimmed = utcString.trim();
+        if (trimmed.equalsIgnoreCase("Z")) {
+            return "UTC+0";
+        }
+        if (trimmed.toUpperCase().startsWith("UTC")) {
+            String rest = trimmed.substring(3).trim();
+            if (rest.isEmpty()) {
+                return "UTC+0";
+            }
+            return "UTC" + rest;
+        }
+        String sign = (trimmed.startsWith("+") || trimmed.startsWith("-")) ? "" : "+";
+        return "UTC" + sign + trimmed;
     }
 
     /**

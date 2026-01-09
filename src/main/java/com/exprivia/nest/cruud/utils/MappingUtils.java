@@ -6,6 +6,7 @@ import com.exprivia.nest.cruud.dto.urbandataset.context.ContextDto;
 import com.exprivia.nest.cruud.dto.urbandataset.specification.IdDto;
 import com.exprivia.nest.cruud.dto.urbandataset.specification.SpecificationDto;
 import com.exprivia.nest.cruud.dto.urbandataset.values.PropertyValueDto;
+import com.exprivia.nest.cruud.utils.TimeUtils;
 
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -52,7 +53,8 @@ public final class MappingUtils {
         }
 
         if (extractionDto.getUdUtc() != null && !extractionDto.getUdUtc().isBlank()) {
-            contextDto.setTimeZone(extractionDto.getUdUtc());
+            String label = TimeUtils.formatUtcOffsetLabel(extractionDto.getUdUtc());
+            contextDto.setTimeZone(label != null ? label : extractionDto.getUdUtc());
         }
     }
 

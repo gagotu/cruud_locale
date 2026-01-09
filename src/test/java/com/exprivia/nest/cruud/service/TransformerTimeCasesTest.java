@@ -80,14 +80,14 @@ class TransformerTimeCasesTest {
         assertEquals(5, lines.size());
 
         // Verify first two timestamps and value conversion
-        assertEquals(expectedUtc("+2", "2023-10-23T08:19:23.532Z"), lines.get(0).getPeriod().get("start_ts"));
+        assertEquals(expectedUtcSeconds("+2", "2023-10-23T08:19:23.532Z"), lines.get(0).getPeriod().get("start_ts"));
         assertEquals(lines.get(0).getPeriod().get("start_ts"), lines.get(0).getPeriod().get("end_ts"));
         assertEquals("0.78", getPropertyVal(lines.get(0), "ElectricPower"));
 
-        assertEquals(expectedUtc("+2", "2023-10-23T08:19:53.282Z"), lines.get(1).getPeriod().get("start_ts"));
+        assertEquals(expectedUtcSeconds("+2", "2023-10-23T08:19:53.282Z"), lines.get(1).getPeriod().get("start_ts"));
         assertEquals("0.76", getPropertyVal(lines.get(1), "ElectricPower"));
 
-        assertEquals("+2", ud.getUrbanDataset().getContext().getTimeZone());
+        assertEquals("UTC+2", ud.getUrbanDataset().getContext().getTimeZone());
     }
 
     @Test
@@ -112,8 +112,8 @@ class TransformerTimeCasesTest {
         List<ResultValueDto> lines = ud.getUrbanDataset().getValues().getLine();
         assertEquals(5, lines.size());
 
-        assertEquals(expectedUtc("+2", "2023-10-23T08:19:23.532Z"), lines.get(0).getPeriod().get("start_ts"));
-        assertEquals(expectedUtc("+2", "2023-10-23T08:23:23.232Z"), lines.get(4).getPeriod().get("start_ts"));
+        assertEquals(expectedUtcSeconds("+2", "2023-10-23T08:19:23.532Z"), lines.get(0).getPeriod().get("start_ts"));
+        assertEquals(expectedUtcSeconds("+2", "2023-10-23T08:23:23.232Z"), lines.get(4).getPeriod().get("start_ts"));
     }
 
     @Test
@@ -136,13 +136,13 @@ class TransformerTimeCasesTest {
 
         // First interval of first day (picks value from the corresponding slot)
         assertEquals("2025-04-01T00:00:00", lines.get(0).getPeriod().get("start_ts"));
-        assertEquals("2025-04-01T00:15:00", lines.get(0).getPeriod().get("end_ts"));
+        assertEquals("2025-04-01T00:14:59", lines.get(0).getPeriod().get("end_ts"));
         assertEquals("0.10", getPropertyVal(lines.get(0), "ElectricPower"));
 
         // Last interval of second day (all slots carry the last value 0.80 in current mapping)
         ResultValueDto last = lines.get(lines.size() - 1);
         assertEquals("2025-04-02T00:45:00", last.getPeriod().get("start_ts"));
-        assertEquals("2025-04-02T01:00:00", last.getPeriod().get("end_ts"));
+        assertEquals("2025-04-02T00:59:59", last.getPeriod().get("end_ts"));
         assertEquals("0.80", getPropertyVal(last, "ElectricPower"));
     }
 
@@ -171,13 +171,13 @@ class TransformerTimeCasesTest {
             assertNotNull(endStr);
             LocalDateTime start = LocalDateTime.parse(startStr);
             LocalDateTime end = LocalDateTime.parse(endStr);
-            assertEquals(Duration.ofMinutes(20), Duration.between(start, end));
+            assertEquals(Duration.ofMinutes(20).minusSeconds(1), Duration.between(start, end));
         }
 
         assertEquals("2023-10-29T00:40:00", lines.get(0).getPeriod().get("start_ts"));
-        assertEquals("2023-10-29T01:00:00", lines.get(0).getPeriod().get("end_ts"));
+        assertEquals("2023-10-29T00:59:59", lines.get(0).getPeriod().get("end_ts"));
         assertEquals("2023-10-29T01:40:00", lines.get(3).getPeriod().get("start_ts"));
-        assertEquals("2023-10-29T02:00:00", lines.get(3).getPeriod().get("end_ts"));
+        assertEquals("2023-10-29T01:59:59", lines.get(3).getPeriod().get("end_ts"));
     }
 
     private PropertyDto baseProperty(String name) {
@@ -334,6 +334,12 @@ class TransformerTimeCasesTest {
         ZoneOffset target = TimeUtils.parseUtcOffset(targetOffset);
         var instant = OffsetDateTime.parse(isoInstantOrOffset).toInstant();
         return instant.atOffset(target).toLocalDateTime().toString();
+    }
+
+    private String expectedUtcSeconds(String targetOffset, String isoInstantOrOffset) {
+        ZoneOffset target = TimeUtils.parseUtcOffset(targetOffset);
+        var instant = OffsetDateTime.parse(isoInstantOrOffset).toInstant();
+        return instant.atOffset(target).toLocalDateTime().withNano(0).toString();
     }
 
     private String getPropertyVal(ResultValueDto rv, String name) {
